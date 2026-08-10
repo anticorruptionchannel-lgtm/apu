@@ -82,15 +82,53 @@ Main API endpoints
 - POST /api/generate-speech — generate TTS audio from text
 - GET /api/stock-search?q=...&type=image|video — search free stock media (requires respective API keys)
 
+Curl examples (local)
+
+Replace HOST below with `http://localhost:3000` or your deployed URL.
+
+1) Health
+
+curl -s http://localhost:3000/api/health | jq
+
+2) Generate image (POST)
+
+curl -s -X POST http://localhost:3000/api/generate-image \
+  -H "Content-Type: application/json" \
+  -d '{"visualPrompt":"investigative news background, dramatic lighting, city hall, broken seals"}' | jq
+
+3) Generate content (POST) — requires GEMINI_API_KEY
+
+curl -s -X POST http://localhost:3000/api/generate-content \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userPrompt":"Allegations of procurement fraud in municipal projects",
+    "language":"english",
+    "videoStyle":"dramatic"
+  }' | jq
+
+4) Generate speech (POST, TTS)
+
+curl -s -X POST http://localhost:3000/api/generate-speech \
+  -H "Content-Type: application/json" \
+  -d '{"text":"This is a test narration for ACC PK."}' | jq
+
+5) Stock search (GET)
+
+curl -s "http://localhost:3000/api/stock-search?q=investigation&type=image" | jq
+
+Notes:
+- Use jq to pretty-print JSON. If you don't have jq, omit the trailing | jq.
+- If GEMINI_API_KEY is missing and you call endpoints that require it, the server will throw an error — add the key into .env or export it into your runtime.
+
 Notes & troubleshooting
 
 - If you see an error about GEMINI_API_KEY, add it to your environment (or AI Studio secrets) and restart the server.
 - The server increases JSON payload limit to 25MB to accept base64 images; uploads may still fail in proxies — check your client.
-- If port 3000 is in use, set `PORT` in your environment or change `server.ts` to read `process.env.PORT` (recommended).
+- The server reads PORT from process.env.PORT with fallback to 3000.
 
 Contributing
 
-If you want, I can add a CONTRIBUTING.md, set up a GitHub Actions workflow for CI (lint/build), or create a `.env.example` file for you (I added one in this commit).
+If you want, I can add a CONTRIBUTING.md, set up a GitHub Actions workflow for CI (lint/build), or add further docs.
 
 License
 

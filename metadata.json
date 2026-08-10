@@ -1,0 +1,6 @@
+{
+  "name": "ACC PK Content Factory",
+  "description": "AI-Powered Video & Content Automation Dashboard for ACC PK (Anti-Corruption Pakistan)",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

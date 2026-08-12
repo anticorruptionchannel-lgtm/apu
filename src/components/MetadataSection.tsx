@@ -1,18 +1,21 @@
 import React, { useState } from 'react';
 import { Copy, Check, ShieldCheck, AlertTriangle, FileText, Hash, Youtube, Mail, BellRing, Share2, Sparkles, Building2, User, Phone } from 'lucide-react';
 import { GeneratedMetadata } from '../types';
+import { buildOfficialContactBlock, buildSocialMediaPost } from '../utils/brand';
 import { AccPkLogo } from './AccPkLogo';
 
 interface MetadataSectionProps {
   metadata: GeneratedMetadata;
   contactEmail: string;
   endingCTA: string;
+  channelName: string;
 }
 
 export const MetadataSection: React.FC<MetadataSectionProps> = ({
   metadata,
   contactEmail,
   endingCTA,
+  channelName,
 }) => {
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
@@ -28,31 +31,20 @@ export const MetadataSection: React.FC<MetadataSectionProps> = ({
 
   const ALWAYS_SAME_MISSION = `Kickbacks, bribes and nepotism at the expense of public is a common practice in the developing countries. Pakistan can not be excluded. Anti corruption channel (ACC PK) is committed to provide you inside facts above corrupt mafias. 'Evidence based reporting' is our motto. The purpose of establishing this channel is to deal with the wrongdoers, expose their evil designs and stop them from their wrongdoings at all levels. Subscribe the Anti corruption channel and receive all the updates and be part of the team fighting for a corruption free Pakistan.`;
 
-  const ALWAYS_SAME_CONTACT = `--------------------------------------------------
-ANTI-CORRUPTION CHANNEL PAKISTAN (ACC PK)
-"DETERMINE TO BRING PROSPERITY"
-"CRUSH CORRUPTION" • Evidence Based Reporting
-
-👤 Founder & C.E.O: Rashid Hameed
-🏢 Address: 148 D Faisal Town, Lahore, Pakistan
-📞 Mobile / WhatsApp: +92 315 433 8690
-☎️ Landline: +92 42 3522 1515
-📧 Email: anticorruptionchannel@gmail.com
---------------------------------------------------`;
-
   const ALWAYS_SAME_HASHTAGS = `#ACCPK #AntiCorruptionChannel #RashidHameed #EvidenceBasedReporting #CrushCorruption #DetermineToBringProsperity #Pakistan #StopCorruption #ExposeWrongdoers`;
 
-  const fullSocialMediaPost = `🔴 EXCLUSIVE REPORT: ${metadata.title}
-
-${metadata.script}
-
---------------------------------------------------
-📜 OUR MOTTO & MISSION STATEMENT:
-${ALWAYS_SAME_MISSION}
-
-${ALWAYS_SAME_CONTACT}
-
-${formattedHashtags} ${ALWAYS_SAME_HASHTAGS}`;
+  const realizedMission = metadata.officialMission || ALWAYS_SAME_MISSION;
+  const realizedContactBlock = metadata.officialContact || buildOfficialContactBlock({ channelName, contactEmail, endingCTA });
+  const fullSocialMediaPost = buildSocialMediaPost({
+    title: metadata.title,
+    script: metadata.script,
+    hashtags: `${formattedHashtags} ${ALWAYS_SAME_HASHTAGS}`.trim(),
+    officialMission: realizedMission,
+    officialContact: realizedContactBlock,
+    channelName,
+    contactEmail,
+    endingCTA,
+  });
 
   return (
     <div className="bg-[#0f1015] border border-white/10 p-6 md:p-8 space-y-6 shadow-2xl">
@@ -107,7 +99,7 @@ ${formattedHashtags} ${ALWAYS_SAME_HASHTAGS}`;
           </p>
           <p className="flex items-center gap-2 text-[#c5a47e] font-mono">
             <Mail className="w-3.5 h-3.5" />
-            <span>anticorruptionchannel@gmail.com</span>
+            <span>{contactEmail || 'anticorruptionchannel@gmail.com'}</span>
           </p>
         </div>
       </div>

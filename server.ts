@@ -7,7 +7,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = 3000;
 
 // Increase payload limits for base64 image uploads
 app.use(express.json({ limit: '25mb' }));
@@ -64,7 +64,7 @@ app.post('/api/generate-content', async (req, res) => {
 
     const ai = getGenAI();
 
-    const OFFICIAL_MISSION = `Kickbacks, bribes and nepotism at the expense of public is a common practice in the developing countries. Pakistan can not be excluded. Anti corruption channel (ACC P[...]`;
+    const OFFICIAL_MISSION = `Kickbacks, bribes and nepotism at the expense of public is a common practice in the developing countries. Pakistan can not be excluded. Anti corruption channel (ACC PK) is committed to provide you inside facts above corrupt mafias. 'Evidence based reporting' is our motto. The purpose of establishing this channel is to deal with the wrongdoers, expose their evil designs and stop them from their wrongdoings at all levels. Subscribe the Anti corruption channel and receive all the updates and be part of the team fighting for a corruption free Pakistan.`;
 
     const OFFICIAL_CONTACT_BLOCK = `
 --------------------------------------------------
@@ -97,7 +97,7 @@ ANTI-CORRUPTION CHANNEL PAKISTAN (ACC PK)
     } else if (language === 'punjabi') {
       langInstructions = 'Write the SCRIPT and NARRATION TEXT in Punjabi (Gurmukhi/Shahmukhi or clear Roman Punjabi) with powerful anti-corruption slogans.';
     } else if (language === 'roman_urdu') {
-      langInstructions = 'Write the SCRIPT and NARRATION TEXT in clean Roman Urdu (e.g., "Mulk main corruption k khilaf awaz uthane ka waqt aa gaya hai...") so it is easy for voice synthesis and [...]';
+      langInstructions = 'Write the SCRIPT and NARRATION TEXT in clean Roman Urdu (e.g., "Mulk main corruption k khilaf awaz uthane ka waqt aa gaya hai...") so it is easy for voice synthesis and subtitles.';
     } else {
       langInstructions = 'Write the SCRIPT and NARRATION TEXT in English with an authoritative, bold investigative journalism tone.';
     }
@@ -108,7 +108,7 @@ ${langInstructions}
 
 Requirements:
 1. POLISHED SCRIPT: Craft an engaging 30-45 second narration script. Ensure it sounds punchy, serious, and captivating.
-2. POLICY SAFETY: Explicitly review the prompt for YouTube community safety. Avoid libel/defamation against named unverified individuals, hate speech, or incitement to violence. State if it is po[...]
+2. POLICY SAFETY: Explicitly review the prompt for YouTube community safety. Avoid libel/defamation against named unverified individuals, hate speech, or incitement to violence. State if it is policy-safe and provide recommendations.
 3. SCENE BREAKDOWN: Break the narration into 3-4 distinct scenes with visual descriptions and lower-third text overlays.
 4. METADATA: Provide high CTR YouTube Title, Full Description (including contact: ${contactEmail} and CTA: ${endingCTA}), Hashtags, Visual Generation Prompt, and Thumbnail Headline.
 5. CREATIVE VARIATION: ${isRefresh ? 'Generate a totally fresh, unique angle/perspective compared to standard takes.' : 'Generate a hard-hitting, professional broadcast script.'}`;
@@ -188,7 +188,11 @@ ${isRefresh ? 'Note: User clicked REFRESH! Give a fresh unique creative angle.' 
     const jsonOutput = JSON.parse(resultText);
 
     // Merge official ACC PK mission statement, contact block, and standard hashtags
-    const fullDescription = `${jsonOutput.description || ''}\n\n${OFFICIAL_MISSION}\n\n${OFFICIAL_CONTACT_BLOCK}`;
+    const fullDescription = `${jsonOutput.description || ''}
+
+${OFFICIAL_MISSION}
+
+${OFFICIAL_CONTACT_BLOCK}`;
 
     // Deduplicate and combine hashtags
     const mergedHashtags = Array.from(new Set([
@@ -213,7 +217,7 @@ ${isRefresh ? 'Note: User clicked REFRESH! Give a fresh unique creative angle.' 
   }
 });
 
-// API: Generate AI Background Image using Gemini Image Model
+// API: Generate AI Background Image using Pollinations.ai
 app.post('/api/generate-image', async (req, res) => {
   try {
     const { visualPrompt, aspectRatio = '16:9' } = req.body;
@@ -221,36 +225,16 @@ app.post('/api/generate-image', async (req, res) => {
       return res.status(400).json({ error: 'visualPrompt is required' });
     }
 
-    const ai = getGenAI();
     const prompt = `${visualPrompt}, cinematic lighting, dramatic contrast, high resolution anti-corruption investigative journalism aesthetic, broadcast quality, 8k`;
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.1-flash-lite-image',
-      contents: {
-        parts: [{ text: prompt }]
-      },
-      config: {
-        imageConfig: {
-          aspectRatio: aspectRatio === '16:9' ? '16:9' : '1:1'
-        }
-      }
-    });
-
-    let imageUrl = '';
-    const candidates = response.candidates;
-    if (candidates && candidates[0]?.content?.parts) {
-      for (const part of candidates[0].content.parts) {
-        if (part.inlineData?.data) {
-          imageUrl = `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`;
-          break;
-        }
-      }
-    }
-
-    if (!imageUrl) {
-      // Fallback placeholder image with high contrast if generation model is restricted
-      imageUrl = `https://picsum.photos/seed/${encodeURIComponent(visualPrompt.slice(0, 20))}/1280/720`;
-    }
+    
+    // Use Pollinations.ai for free, keyless image generation
+    const width = aspectRatio === '16:9' ? 1280 : 1024;
+    const height = aspectRatio === '16:9' ? 720 : 1024;
+    const encodedPrompt = encodeURIComponent(prompt);
+    
+    // Adding random seed to ensure uniqueness per request
+    const seed = Math.floor(Math.random() * 1000000);
+    const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&nologo=true&seed=${seed}`;
 
     res.json({ imageUrl });
   } catch (err: any) {

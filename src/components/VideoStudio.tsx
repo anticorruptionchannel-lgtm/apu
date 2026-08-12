@@ -1,4 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { default as ReactPlayer } from 'react-player';
+
+const ReactPlayerComponent = ReactPlayer as any;
 import {
   Play,
   Pause,
@@ -481,7 +484,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
             />
 
             {/* Play Overlay Button if paused */}
-            {!isPlaying && (
+            {!isPlaying && !recordedVideoUrl && (
               <div
                 onClick={togglePlay}
                 className="absolute inset-0 bg-black/50 hover:bg-black/30 flex flex-col items-center justify-center cursor-pointer transition-all group"
@@ -495,6 +498,15 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
               </div>
             )}
           </div>
+          
+          {recordedVideoUrl && (
+            <div className="space-y-2">
+                <h4 className="text-[10px] uppercase tracking-[0.2em] font-medium text-[#c5a47e]">Exported Video Preview</h4>
+                <div className="aspect-video w-full border border-white/10">
+                    <ReactPlayerComponent url={recordedVideoUrl} width="100%" height="100%" controls />
+                </div>
+            </div>
+          )}
 
           {/* Video Player Controls */}
           <div className="flex flex-wrap items-center justify-between gap-3 bg-[#121318] p-4 border border-white/10">

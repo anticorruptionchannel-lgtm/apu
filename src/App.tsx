@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { PromptSection } from './components/PromptSection';
@@ -6,7 +8,7 @@ import { VideoStudio } from './components/VideoStudio';
 import { ThumbnailBuilder } from './components/ThumbnailBuilder';
 import { MetadataSection } from './components/MetadataSection';
 import { GeneratedMetadata, LanguageOption, VideoStyle } from './types';
-import { Shield, Sparkles, Video, Image as ImageIcon, FileText, RefreshCw, AlertCircle } from 'lucide-react';
+import { Shield, Sparkles, Video, Image as ImageIcon, FileText, RefreshCw, AlertCircle, Download } from 'lucide-react';
 
 export default function App() {
   // Channel & Brand Settings
@@ -29,10 +31,12 @@ export default function App() {
   const [selectedStyle, setSelectedStyle] = useState<VideoStyle>('dramatic');
 
   // Execution & Output State
-  const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [generationStage, setGenerationStage] = useState<'idle' | 'scripting' | 'image' | 'audio'>('idle');
   const [generationDone, setGenerationDone] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'video' | 'thumbnail' | 'metadata'>('video');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const isGenerating = generationStage !== 'idle';
 
   const [metadata, setMetadata] = useState<GeneratedMetadata | null>(null);
   const [bgImageUrl, setBgImageUrl] = useState<string | null>(null);
@@ -45,7 +49,7 @@ export default function App() {
       return;
     }
 
-    setIsGenerating(true);
+    setGenerationStage('scripting');
     setErrorMessage(null);
 
     try {
@@ -74,6 +78,7 @@ export default function App() {
       setMetadata(contentData);
 
       // 2. Request AI Background Image Generation
+      setGenerationStage('image');
       let bgUrl: string | null = null;
       try {
         const imageRes = await fetch('/api/generate-image', {
@@ -93,6 +98,7 @@ export default function App() {
       setBgImageUrl(bgUrl);
 
       // 3. Request Speech TTS Audio
+      setGenerationStage('audio');
       let speechUrl: string | null = null;
       try {
         const speechRes = await fetch('/api/generate-speech', {
@@ -116,8 +122,38 @@ export default function App() {
       console.error('Error running ACC PK Content Engine:', err);
       setErrorMessage(err.message || 'An error occurred during generation.');
     } finally {
-      setIsGenerating(false);
+      setGenerationStage('idle');
     }
+  };
+
+  const downloadProjectAsZip = async () => {
+    if (!metadata) return;
+    const zip = new JSZip();
+
+    // Add metadata
+    zip.file('metadata.json', JSON.stringify(metadata, null, 2));
+
+    // Helper to fetch blob
+    const fetchBlob = async (url: string) => {
+        const response = await fetch(url);
+        return await response.blob();
+    };
+
+    // Add image
+    if (bgImageUrl) {
+        const imageBlob = await fetchBlob(bgImageUrl);
+        zip.file('thumbnail.png', imageBlob);
+    }
+
+    // Add audio
+    if (audioUrl) {
+        const audioBlob = await fetchBlob(audioUrl);
+        zip.file('narration.mp3', audioBlob);
+    }
+
+    // Generate zip
+    const content = await zip.generateAsync({ type: 'blob' });
+    saveAs(content, 'acc_pk_project.zip');
   };
 
   return (
@@ -158,7 +194,7 @@ export default function App() {
             selectedStyle={selectedStyle}
             setSelectedStyle={setSelectedStyle}
             onGenerate={handleGenerate}
-            isGenerating={isGenerating}
+            generationStage={generationStage}
           />
 
           {/* Error Message Display */}
@@ -173,41 +209,50 @@ export default function App() {
           {generationDone && metadata && (
             <div className="space-y-6">
               {/* Tab Selector Header */}
-              <div className="flex items-center gap-2 border-b border-white/10 pb-3 overflow-x-auto">
-                <button
-                  onClick={() => setActiveTab('video')}
-                  className={`flex items-center gap-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.15em] transition-all cursor-pointer whitespace-nowrap border ${
-                    activeTab === 'video'
-                      ? 'bg-[#c5a47e] text-black border-[#c5a47e]'
-                      : 'bg-[#0f1015] text-white/60 hover:text-white border-white/10'
-                  }`}
-                >
-                  <Video className="w-4 h-4" />
-                  <span>Video Composition</span>
-                </button>
+              <div className="flex items-center justify-between border-b border-white/10 pb-3 overflow-x-auto">
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setActiveTab('video')}
+                        className={`flex items-center gap-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.15em] transition-all cursor-pointer whitespace-nowrap border ${
+                        activeTab === 'video'
+                            ? 'bg-[#c5a47e] text-black border-[#c5a47e]'
+                            : 'bg-[#0f1015] text-white/60 hover:text-white border-white/10'
+                        }`}
+                    >
+                        <Video className="w-4 h-4" />
+                        <span>Video Composition</span>
+                    </button>
 
-                <button
-                  onClick={() => setActiveTab('thumbnail')}
-                  className={`flex items-center gap-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.15em] transition-all cursor-pointer whitespace-nowrap border ${
-                    activeTab === 'thumbnail'
-                      ? 'bg-[#c5a47e] text-black border-[#c5a47e]'
-                      : 'bg-[#0f1015] text-white/60 hover:text-white border-white/10'
-                  }`}
-                >
-                  <ImageIcon className="w-4 h-4" />
-                  <span>Auto-Thumbnail</span>
-                </button>
+                    <button
+                        onClick={() => setActiveTab('thumbnail')}
+                        className={`flex items-center gap-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.15em] transition-all cursor-pointer whitespace-nowrap border ${
+                        activeTab === 'thumbnail'
+                            ? 'bg-[#c5a47e] text-black border-[#c5a47e]'
+                            : 'bg-[#0f1015] text-white/60 hover:text-white border-white/10'
+                        }`}
+                    >
+                        <ImageIcon className="w-4 h-4" />
+                        <span>Auto-Thumbnail</span>
+                    </button>
 
+                    <button
+                        onClick={() => setActiveTab('metadata')}
+                        className={`flex items-center gap-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.15em] transition-all cursor-pointer whitespace-nowrap border ${
+                        activeTab === 'metadata'
+                            ? 'bg-[#c5a47e] text-black border-[#c5a47e]'
+                            : 'bg-[#0f1015] text-white/60 hover:text-white border-white/10'
+                        }`}
+                    >
+                        <FileText className="w-4 h-4" />
+                        <span>SEO & Metadata</span>
+                    </button>
+                </div>
                 <button
-                  onClick={() => setActiveTab('metadata')}
-                  className={`flex items-center gap-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.15em] transition-all cursor-pointer whitespace-nowrap border ${
-                    activeTab === 'metadata'
-                      ? 'bg-[#c5a47e] text-black border-[#c5a47e]'
-                      : 'bg-[#0f1015] text-white/60 hover:text-white border-white/10'
-                  }`}
+                    onClick={downloadProjectAsZip}
+                    className="flex items-center gap-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.15em] bg-[#c5a47e] text-black border border-[#c5a47e] transition-all cursor-pointer whitespace-nowrap hover:bg-white"
                 >
-                  <FileText className="w-4 h-4" />
-                  <span>SEO & Metadata</span>
+                    <Download className="w-4 h-4" />
+                    <span>Download Project ZIP</span>
                 </button>
               </div>
 

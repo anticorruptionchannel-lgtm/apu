@@ -13,7 +13,7 @@ interface PromptSectionProps {
   selectedStyle: VideoStyle;
   setSelectedStyle: (val: VideoStyle) => void;
   onGenerate: (isRefresh?: boolean) => void;
-  isGenerating: boolean;
+  generationStage: 'idle' | 'scripting' | 'image' | 'audio';
 }
 
 export const PromptSection: React.FC<PromptSectionProps> = ({
@@ -26,8 +26,16 @@ export const PromptSection: React.FC<PromptSectionProps> = ({
   selectedStyle,
   setSelectedStyle,
   onGenerate,
-  isGenerating,
+  generationStage,
 }) => {
+  const isGenerating = generationStage !== 'idle';
+  const progressPercentage = {
+    idle: 0,
+    scripting: 25,
+    image: 50,
+    audio: 75,
+  }[generationStage];
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -195,10 +203,15 @@ export const PromptSection: React.FC<PromptSectionProps> = ({
           className="w-full bg-[#c5a47e] hover:bg-white text-black font-semibold py-3.5 px-6 border border-[#c5a47e] flex items-center justify-center gap-2 text-xs uppercase tracking-[0.2em] transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-xl"
         >
           {isGenerating ? (
-            <>
-              <RefreshCw className="w-4 h-4 animate-spin text-black" />
-              <span>Compiling ACC PK AI Engine...</span>
-            </>
+            <div className="flex flex-col w-full gap-2">
+                <div className="flex justify-between text-[10px]">
+                    <span>{generationStage.toUpperCase()}...</span>
+                    <span>{progressPercentage}%</span>
+                </div>
+                <div className="w-full bg-black/30 h-1.5 rounded-full overflow-hidden">
+                    <div className="bg-white h-full transition-all duration-300" style={{ width: `${progressPercentage}%` }} />
+                </div>
+            </div>
           ) : (
             <>
               <Sparkles className="w-4 h-4 text-black" />

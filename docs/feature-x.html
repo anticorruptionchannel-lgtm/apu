@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Feature X — Specification (Developer Docs)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root { --bg:#ffffff; --muted:#475569; --accent:#0b5fff; --success:#166534; --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Noto Mono", monospace; }
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; color:#0b1a2b; margin:0; padding:36px; background:var(--bg); }
+    header { margin-bottom:20px; }
+    h1 { margin:0 0 6px 0; font-size:28px; }
+    h2 { color:#0b1a2b; margin-top:20px; }
+    h3 { margin-top:14px; }
+    .meta { color:var(--muted); margin-bottom:14px; }
+    .lead { color:#0f1724; margin-bottom:12px; }
+    nav { background:#f8fafc; border:1px solid #e6eef6; padding:12px; border-radius:8px; max-width:340px; float:right; margin-left:18px; }
+    ul.toc { margin:0; padding-left:18px; }
+    section { max-width:900px; }
+    pre, code { font-family: var(--mono); background:#f8fafc; padding:6px 8px; border-radius:6px; }
+    .kbd { background:#eef2ff; border:1px solid #e0e7ff; padding:4px 6px; border-radius:4px; font-family:var(--mono); }
+    footer { margin-top:36px; color:var(--muted); font-size:13px; }
+    .pill { display:inline-block; background:#eef2e9; color:var(--success); padding:4px 8px; border-radius:999px; font-weight:600; font-size:12px; }
+    .deliverables li { margin-bottom:6px; }
+    @media (max-width:900px) { nav { float:none; max-width:none; margin:12px 0; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Feature X — Specification</h1>
+    <div class="meta">Developer docs generated from <code>docs/specs/feature-x.md</code></div>
+    <p class="lead">Feature X provides [short description of behavior and value]. It enables consumers to [primary capability], improving [metric or user experience].</p>
+  </header>
+
+  <nav aria-label="Table of contents">
+    <strong>On this page</strong>
+    <ul class="toc">
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#problem">Problem & Motivation</a></li>
+      <li><a href="#goals">Goals</a></li>
+      <li><a href="#non-goals">Non-goals</a></li>
+      <li><a href="#requirements">Requirements & Constraints</a></li>
+      <li><a href="#api">API / Interface</a></li>
+      <li><a href="#examples">Examples</a></li>
+      <li><a href="#acceptance">Acceptance Criteria</a></li>
+      <li><a href="#compat">Backwards Compatibility & Migration</a></li>
+      <li><a href="#deliverables">Deliverables</a></li>
+      <li><a href="#notes">Notes / Open Decisions</a></li>
+    </ul>
+  </nav>
+
+  <main>
+    <section id="overview">
+      <h2>Overview</h2>
+      <p>Feature X provides <em>[short description of behavior and value]</em>. It enables consumers to <em>[primary capability]</em>, improving <em>[metric or user experience]</em>.</p>
+    </section>
+
+    <section id="problem">
+      <h2>Problem statement and motivation</h2>
+      <ul>
+        <li><strong>Current behavior:</strong> [briefly describe current limitation].</li>
+        <li><strong>Problem:</strong> [what goes wrong / what's missing].</li>
+        <li><strong>Motivation:</strong> why Feature X is needed and what scenarios it solves.</li>
+      </ul>
+    </section>
+
+    <section id="goals">
+      <h2>Goals</h2>
+      <ul>
+        <li><strong>Primary:</strong> Implement Feature X so callers can [goal].</li>
+        <li><strong>Secondary:</strong> Backwards-compatibility, good DX, test coverage, documentation.</li>
+      </ul>
+    </section>
+
+    <section id="non-goals">
+      <h2>Non-goals</h2>
+      <p>Not part of this change: <em>[e.g., UI changes, unrelated optimizations]</em>.</p>
+    </section>
+
+    <section id="requirements">
+      <h2>Requirements & Constraints</h2>
+      <h3>Functional</h3>
+      <ul>
+        <li>R1: Provide API to [action].</li>
+        <li>R2: Validate inputs and return clear error shapes.</li>
+        <li>R3: Graceful failure modes for edge cases (describe).</li>
+      </ul>
+      <h3>Non-functional</h3>
+      <ul>
+        <li>N1: Types for TypeScript consumers.</li>
+        <li>N2: Performance: latency/complexity constraints (if any).</li>
+        <li>N3: Coverage: unit tests ≥ 90% on Feature X modules.</li>
+      </ul>
+      <h3>Constraints</h3>
+      <ul>
+        <li>Must be compatible with Node &gt;= X and TypeScript &gt;= Y.</li>
+        <li>Keep bundle size increase minimal.</li>
+      </ul>
+    </section>
+
+    <section id="api">
+      <h2>API / Interface changes</h2>
+      <p>Public exports (suggested):</p>
+      <ul>
+        <li><code>types.ts</code>
+          <ul>
+            <li><code>interface FeatureXOptions { /* fields */ }</code></li>
+            <li><code>type FeatureXResult = { success: boolean; data?: ...; error?: string }</code></li>
+          </ul>
+        </li>
+        <li><code>index.ts</code>
+          <ul>
+            <li><code>export async function runFeatureX(opts: FeatureXOptions): Promise&lt;FeatureXResult&gt;</code></li>
+          </ul>
+        </li>
+      </ul>
+    </section>
+
+    <section id="examples">
+      <h2>Examples</h2>
+      <pre><code>import { runFeatureX } from '...';
+const res = await runFeatureX({ foo: 'bar' });
+if (!res.success) throw new Error(res.error);
+</code></pre>
+      <p>Usage example (from docs/feature-x.md):</p>
+      <pre><code>import { runFeatureX } from 'your-package';
+
+const result = await runFeatureX({ foo: 'value' });
+if (!result.success) {
+  console.error('Feature X failed:', result.error);
+} else {
+  console.log('Feature X result:', result.data);
+}
+</code></pre>
+    </section>
+
+    <section id="acceptance">
+      <h2>Acceptance criteria ("done")</h2>
+      <ul>
+        <li>Spec file reviewed and merged.</li>
+        <li>Implementation passes CI.</li>
+        <li>Unit/integration tests covering normal and edge cases.</li>
+        <li>Documentation shows usage example.</li>
+        <li>Backwards-compatible: existing public API remains available or migration guide provided.</li>
+      </ul>
+    </section>
+
+    <section id="compat">
+      <h2>Backwards compatibility & migration</h2>
+      <p>If a breaking change is required, provide:</p>
+      <ul>
+        <li>Migration steps in docs.</li>
+        <li>Deprecation notices for previous API surfaces.</li>
+      </ul>
+      <p>Default behavior should preserve existing flows unless opts explicitly change behavior.</p>
+    </section>
+
+    <section id="deliverables">
+      <h2>Deliverables</h2>
+      <ul class="deliverables">
+        <li><code>docs/specs/feature-x.md</code> (this source spec)</li>
+        <li>Implementation in <code>src/feature-x/*</code></li>
+        <li>Tests in <code>test/feature-x.*</code></li>
+        <li>Documentation page <code>docs/feature-x.md</code> and this HTML page</li>
+        <li>PR linking issues #1, #3, #2 and referencing this spec (#4)</li>
+      </ul>
+    </section>
+
+    <section id="notes">
+      <h2>Notes / open decisions</h2>
+      <ul>
+        <li>Decision A: behavior for X vs Y — prefer X for performance; confirm.</li>
+        <li>Decision B: default values for options — propose sensible defaults; confirm.</li>
+      </ul>
+    </section>
+
+    <footer>
+      <p>Generated HTML developer docs for Feature X. Source: <code>docs/specs/feature-x.md</code>.</p>
+      <p class="meta">Generated by Copilot on 2026-08-18</p>
+    </footer>
+  </main>
+</body>
+</html>

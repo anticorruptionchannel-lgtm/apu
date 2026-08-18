@@ -1,0 +1,8 @@
+- [x] Create spec document (docs/specs/feature-x.md)
+- [ ] Review spec and resolve open decisions
+- [ ] Implement core functionality (src/feature-x/*)
+- [ ] Add unit tests (test/feature-x.*)
+- [ ] Add integration tests (if applicable)
+- [ ] Add docs (docs/feature-x.md)
+- [ ] Update changelog / release notes
+- [ ] Open PR linking #1, #3, #2 and referencing #4

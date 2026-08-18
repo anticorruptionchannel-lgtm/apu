@@ -21,8 +21,6 @@ export interface GeneratedMetadata {
   };
   language: LanguageOption;
   languageLabel: string;
-  officialMission?: string;
-  officialContact?: string;
   scenes: {
     sceneNumber: number;
     narrationText: string;

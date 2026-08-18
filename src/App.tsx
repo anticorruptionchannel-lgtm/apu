@@ -193,7 +193,6 @@ export default function App() {
             setSelectedLanguage={setSelectedLanguage}
             selectedStyle={selectedStyle}
             setSelectedStyle={setSelectedStyle}
-            defaultLanguage={defaultLanguage}
             onGenerate={handleGenerate}
             generationStage={generationStage}
           />
@@ -285,7 +284,6 @@ export default function App() {
                   metadata={metadata}
                   contactEmail={contactEmail}
                   endingCTA={endingCTA}
-                  channelName={channelName}
                 />
               )}
             </div>

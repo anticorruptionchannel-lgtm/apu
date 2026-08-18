@@ -2,7 +2,6 @@ import React, { useRef } from 'react';
 import { Sparkles, RefreshCw, Upload, Image as ImageIcon, X, Languages, Film, Layers, AlertCircle } from 'lucide-react';
 import { LanguageOption, VideoStyle, PresetIssue } from '../types';
 import { PRESET_ISSUES } from '../data/presetIssues';
-import { getPresetSelection } from '../utils/presetSelection';
 
 interface PromptSectionProps {
   userPrompt: string;
@@ -13,7 +12,6 @@ interface PromptSectionProps {
   setSelectedLanguage: (val: LanguageOption) => void;
   selectedStyle: VideoStyle;
   setSelectedStyle: (val: VideoStyle) => void;
-  defaultLanguage: LanguageOption;
   onGenerate: (isRefresh?: boolean) => void;
   generationStage: 'idle' | 'scripting' | 'image' | 'audio';
 }
@@ -27,7 +25,6 @@ export const PromptSection: React.FC<PromptSectionProps> = ({
   setSelectedLanguage,
   selectedStyle,
   setSelectedStyle,
-  defaultLanguage,
   onGenerate,
   generationStage,
 }) => {
@@ -53,10 +50,8 @@ export const PromptSection: React.FC<PromptSectionProps> = ({
   };
 
   const handleSelectPreset = (preset: PresetIssue) => {
-    const nextSelection = getPresetSelection(preset, defaultLanguage);
-    setUserPrompt(nextSelection.userPrompt);
-    setSelectedStyle(nextSelection.selectedStyle);
-    setSelectedLanguage(nextSelection.selectedLanguage);
+    setUserPrompt(preset.prompt);
+    setSelectedStyle(preset.suggestedStyle);
   };
 
   return (

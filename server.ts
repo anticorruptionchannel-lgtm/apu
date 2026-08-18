@@ -3,7 +3,6 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type, Modality } from '@google/genai';
 import dotenv from 'dotenv';
-import { buildFullDescription, buildOfficialContactBlock, DEFAULT_MISSION } from './src/utils/brand';
 
 dotenv.config();
 
@@ -65,13 +64,20 @@ app.post('/api/generate-content', async (req, res) => {
 
     const ai = getGenAI();
 
-    const OFFICIAL_MISSION = DEFAULT_MISSION;
+    const OFFICIAL_MISSION = `Kickbacks, bribes and nepotism at the expense of public is a common practice in the developing countries. Pakistan can not be excluded. Anti corruption channel (ACC PK) is committed to provide you inside facts above corrupt mafias. 'Evidence based reporting' is our motto. The purpose of establishing this channel is to deal with the wrongdoers, expose their evil designs and stop them from their wrongdoings at all levels. Subscribe the Anti corruption channel and receive all the updates and be part of the team fighting for a corruption free Pakistan.`;
 
-    const OFFICIAL_CONTACT_BLOCK = buildOfficialContactBlock({
-      channelName,
-      contactEmail,
-      endingCTA,
-    });
+    const OFFICIAL_CONTACT_BLOCK = `
+--------------------------------------------------
+ANTI-CORRUPTION CHANNEL PAKISTAN (ACC PK)
+"DETERMINE TO BRING PROSPERITY"
+"CRUSH CORRUPTION" • Evidence Based Reporting
+
+👤 Founder & C.E.O: Rashid Hameed
+🏢 Address: 148 D Faisal Town, Lahore, Pakistan
+📞 Contact / Mobile: +92 315 433 8690
+☎️ Landline: +92 42 3522 1515
+📧 Official Email: anticorruptionchannel@gmail.com
+--------------------------------------------------`;
 
     const ALWAYS_SAME_HASHTAGS = [
       '#ACCPK',
@@ -182,14 +188,11 @@ ${isRefresh ? 'Note: User clicked REFRESH! Give a fresh unique creative angle.' 
     const jsonOutput = JSON.parse(resultText);
 
     // Merge official ACC PK mission statement, contact block, and standard hashtags
-    const fullDescription = buildFullDescription({
-      description: jsonOutput.description || '',
-      officialMission: OFFICIAL_MISSION,
-      officialContact: OFFICIAL_CONTACT_BLOCK,
-      channelName,
-      contactEmail,
-      endingCTA,
-    });
+    const fullDescription = `${jsonOutput.description || ''}
+
+${OFFICIAL_MISSION}
+
+${OFFICIAL_CONTACT_BLOCK}`;
 
     // Deduplicate and combine hashtags
     const mergedHashtags = Array.from(new Set([

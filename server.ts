@@ -65,12 +65,27 @@ async function withRetry<T>(
 // "library voice" error — stick to IDs returned by GET /v1/voices for your account.
 const ELEVENLABS_DEFAULT_VOICE_ID = 'EXAVITQu4vr4xnSDxMaL';
 
-async function generateElevenLabsSpeech(text: string, voiceId: string): Promise<string> {
-  const apiKey = process.env.ELEVENLABS_API_KEY;
-  if (!apiKey) {
-    throw new Error('ELEVENLABS_API_KEY environment variable is not set.');
+// Multiple keys: ELEVENLABS_API_KEYS="key1,key2,key3" (comma-separated) takes priority;
+// falls back to the single ELEVENLABS_API_KEY. Order is preserved, duplicates dropped.
+function getElevenLabsApiKeys(): string[] {
+  const keys: string[] = [];
+  if (process.env.ELEVENLABS_API_KEYS) {
+    keys.push(...process.env.ELEVENLABS_API_KEYS.split(',').map((k) => k.trim()).filter(Boolean));
+  } else if (process.env.ELEVENLABS_API_KEY) {
+    keys.push(process.env.ELEVENLABS_API_KEY.trim());
   }
+  return Array.from(new Set(keys));
+}
 
+// Sticks with one key across requests (persists for the server's lifetime) rather than
+// round-robining — a monthly character quota only helps if a key is used until it's
+// actually exhausted, not spread thin across every key at once.
+let elevenLabsKeyIndex = 0;
+
+async function callElevenLabsTTS(apiKey: string, text: string, voiceId: string): Promise<string> {
+  // ElevenLabs returns quota exhaustion as a 401 with detail.status "quota_exceeded" (not
+  // 429), so genuine transient rate-limiting (429/503) is the only thing worth a
+  // short-backoff retry here — quota exhaustion needs a different key, not a wait.
   const isRetryableHttpError = (err: any) => err?.status === 429 || err?.status === 503;
 
   return withRetry(
@@ -95,8 +110,15 @@ async function generateElevenLabsSpeech(text: string, voiceId: string): Promise<
 
       if (!response.ok) {
         const errBody = await response.text().catch(() => '');
+        let elevenLabsStatus: string | undefined;
+        try {
+          elevenLabsStatus = JSON.parse(errBody)?.detail?.status;
+        } catch {
+          // non-JSON error body — leave elevenLabsStatus undefined
+        }
         const error: any = new Error(`ElevenLabs TTS failed: ${response.status} ${errBody}`);
         error.status = response.status;
+        error.elevenLabsStatus = elevenLabsStatus;
         throw error;
       }
 
@@ -110,6 +132,38 @@ async function generateElevenLabsSpeech(text: string, voiceId: string): Promise<
   );
 }
 
+function isElevenLabsKeyExhausted(err: any): boolean {
+  return err?.elevenLabsStatus === 'quota_exceeded'
+    || err?.elevenLabsStatus === 'invalid_api_key'
+    || err?.elevenLabsStatus === 'missing_permissions'
+    || err?.status === 401;
+}
+
+// Tries the sticky current key first, then rotates through the rest only on exhaustion
+// (quota/invalid/permission errors) — a non-quota error (bad request, network issue)
+// fails immediately instead of pointlessly burning through every remaining key.
+async function generateElevenLabsSpeech(text: string, voiceId: string): Promise<string> {
+  const keys = getElevenLabsApiKeys();
+  if (keys.length === 0) {
+    throw new Error('No ElevenLabs API key configured (ELEVENLABS_API_KEY / ELEVENLABS_API_KEYS).');
+  }
+
+  let lastError: any;
+  for (let attempt = 0; attempt < keys.length; attempt++) {
+    const index = (elevenLabsKeyIndex + attempt) % keys.length;
+    try {
+      const audioUrl = await callElevenLabsTTS(keys[index], text, voiceId);
+      elevenLabsKeyIndex = index;
+      return audioUrl;
+    } catch (err: any) {
+      lastError = err;
+      if (!isElevenLabsKeyExhausted(err)) throw err;
+      console.warn(`ElevenLabs key #${index + 1}/${keys.length} exhausted (${err.elevenLabsStatus || err.status}), trying next key...`);
+    }
+  }
+  throw lastError;
+}
+
 // ----------------- API ENDPOINTS -----------------
 
 // Health check & API Keys Status
@@ -121,7 +175,8 @@ app.get('/api/health', (req, res) => {
       gemini: Boolean(process.env.GEMINI_API_KEY),
       coverr: Boolean(process.env.COVERR_API_KEY),
       imageGen: Boolean(process.env.IMAGE_GEN_API_KEY),
-      elevenLabs: Boolean(process.env.ELEVENLABS_API_KEY),
+      elevenLabs: getElevenLabsApiKeys().length > 0,
+      elevenLabsKeyCount: getElevenLabsApiKeys().length,
     },
   });
 });

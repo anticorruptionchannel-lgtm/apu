@@ -302,6 +302,7 @@ export default function App() {
                   metadata={metadata}
                   contactEmail={contactEmail}
                   endingCTA={endingCTA}
+                  bgImageUrl={bgImageUrl}
                 />
               )}
             </div>

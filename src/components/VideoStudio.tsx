@@ -29,6 +29,7 @@ import { GeneratedMetadata } from '../types';
 import { drawVideoFrame } from '../utils/canvasRenderer';
 import { narrationEngine } from '../utils/audio';
 import { FREE_STOCK_PRESETS, searchFreeStockImages, StockMediaItem } from '../utils/stockMedia';
+import { isArabicScript } from '../utils/scriptDetect';
 import accPkLogoUrl from '../assets/acc-pk-logo.png';
 
 interface VideoStudioProps {
@@ -98,6 +99,23 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
   useEffect(() => { logoPositionRef.current = logoPosition; }, [logoPosition]);
   useEffect(() => { logoAnimationStyleRef.current = logoAnimationStyle; }, [logoAnimationStyle]);
   useEffect(() => { channelNameRef.current = channelName; }, [channelName]);
+
+  // Warm up the Nastaliq Urdu font (loaded via <link> in index.html, but the browser
+  // only actually downloads it once something requests that font-family — without this,
+  // the first canvas draw of Urdu text can render in the fallback font until a later,
+  // unrelated redraw happens to occur after the download finishes).
+  const [fontVersion, setFontVersion] = useState(0);
+  useEffect(() => {
+    Promise.all([
+      document.fonts.load('bold 24px "Noto Nastaliq Urdu"'),
+      document.fonts.load('bold 31px "Noto Nastaliq Urdu"'),
+    ])
+      .then(() => setFontVersion((v) => v + 1))
+      .catch(() => {
+        // Font failed to load (offline, blocked, etc.) — canvas falls back to serif,
+        // still legible, nothing further to do.
+      });
+  }, []);
 
   // Load BG Image
   useEffect(() => {
@@ -262,7 +280,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
       logoAnimationStyle,
       channelName,
     });
-  }, [isPlaying, bgImageUrl, attachedImageUrl, metadata, logoPosition, logoAnimationStyle, time, sceneMediaMap, activeSceneIndex, logoVersion]);
+  }, [isPlaying, bgImageUrl, attachedImageUrl, metadata, logoPosition, logoAnimationStyle, time, sceneMediaMap, activeSceneIndex, logoVersion, fontVersion]);
 
   // Handle Play/Pause + Audio Sync
   const togglePlay = () => {
@@ -672,7 +690,11 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
                 Urdu / English Sync
               </span>
             </div>
-            <p className="text-slate-300 leading-relaxed font-sans bg-black/40 p-3 border border-white/10 max-h-40 overflow-y-auto dir-auto text-xs">
+            <p
+              className={`text-slate-300 leading-relaxed bg-black/40 p-3 border border-white/10 max-h-40 overflow-y-auto dir-auto ${
+                isArabicScript(metadata.script) ? 'font-urdu-nastaliq text-base' : 'font-sans text-xs'
+              }`}
+            >
               {metadata.script}
             </p>
           </div>

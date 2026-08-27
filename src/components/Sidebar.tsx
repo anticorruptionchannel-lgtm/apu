@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Settings, Mail, BellRing, Sparkles, Shield, Lock, RefreshCw } from 'lucide-react';
 import { LanguageOption } from '../types';
+import accPkLogoUrl from '../assets/acc-pk-logo.png';
 
 interface SidebarProps {
   channelName: string;
@@ -81,10 +82,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 border border-white/15 bg-[#121318] flex items-center justify-center overflow-hidden shrink-0 relative">
-            <div className="flex flex-col items-center text-[#c5a47e] text-[9px] font-serif font-bold">
-              <Shield className="w-5 h-5 text-[#c5a47e]" />
-              <span>ACC PK</span>
-            </div>
+            <img src={accPkLogoUrl} alt="ACC PK official logo" className="w-full h-full object-contain" />
           </div>
 
           <div className="flex-1 bg-white/[0.02] border border-white/10 text-[11px] text-white/50 px-3 py-2.5 flex items-center gap-2 font-light leading-relaxed">

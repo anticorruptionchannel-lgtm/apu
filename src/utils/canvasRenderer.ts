@@ -1,3 +1,14 @@
+import { isArabicScript } from './scriptDetect';
+
+// Nastaliq needs a larger nominal size than Latin sans-serif at comparable visual
+// weight (its diagonal, calligraphic strokes read smaller at the same px value).
+function fontForText(text: string, latinSize: number, weight: string | number = 'bold'): string {
+  if (isArabicScript(text)) {
+    return `${weight} ${Math.round(latinSize * 1.3)}px "Noto Nastaliq Urdu", serif`;
+  }
+  return `${weight} ${latinSize}px sans-serif`;
+}
+
 export interface DrawVideoFrameOptions {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
@@ -152,13 +163,20 @@ export function drawVideoFrame(options: DrawVideoFrameOptions) {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
     ctx.strokeStyle = '#ff3333';
     ctx.lineWidth = 1;
-    ctx.fillRect(30, 80, width * 0.65, 45);
-    ctx.strokeRect(30, 80, width * 0.65, 45);
+    const titleBoxWidth = width * 0.65;
+    ctx.fillRect(30, 80, titleBoxWidth, 45);
+    ctx.strokeRect(30, 80, titleBoxWidth, 45);
 
     ctx.fillStyle = '#ffff00';
-    ctx.font = 'bold 18px sans-serif';
     const displayTitle = title.length > 55 ? title.substring(0, 55) + '...' : title;
-    ctx.fillText(displayTitle, 45, 108);
+    ctx.font = fontForText(displayTitle, 18);
+    if (isArabicScript(displayTitle)) {
+      ctx.direction = 'rtl';
+      ctx.textAlign = 'right';
+      ctx.fillText(displayTitle, 30 + titleBoxWidth - 15, 108);
+    } else {
+      ctx.fillText(displayTitle, 45, 108);
+    }
     ctx.restore();
   }
 
@@ -283,8 +301,11 @@ export function drawVideoFrame(options: DrawVideoFrameOptions) {
   // 8. Draw Subtitles / Current Caption text
   if (currentCaption) {
     ctx.save();
-    ctx.font = 'bold 24px sans-serif';
+    ctx.font = fontForText(currentCaption, 24);
     ctx.textAlign = 'center';
+    if (isArabicScript(currentCaption)) {
+      ctx.direction = 'rtl';
+    }
 
     const textWidth = ctx.measureText(currentCaption).width;
     const padding = 24;

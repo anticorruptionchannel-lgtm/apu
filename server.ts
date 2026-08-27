@@ -57,9 +57,13 @@ async function withRetry<T>(
 
 // ElevenLabs' eleven_v3 model explicitly supports Urdu and Punjabi (unlike
 // eleven_multilingual_v2, which doesn't) — a real fit for this app's narration
-// languages — so prefer it over Gemini TTS when configured. "Rachel", a public
-// premade voice, is the default; override per-request or via ELEVENLABS_VOICE_ID.
-const ELEVENLABS_DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
+// languages — so prefer it over Gemini TTS when configured. "Sarah" is the default
+// (one of ElevenLabs' current default premade voices, confirmed API-accessible on
+// free tier); override per-request or via ELEVENLABS_VOICE_ID. Note: some older
+// voice IDs from ElevenLabs' public docs/tutorials (e.g. the classic "Rachel" ID)
+// have since been retired from free-tier direct API access and return a 402
+// "library voice" error — stick to IDs returned by GET /v1/voices for your account.
+const ELEVENLABS_DEFAULT_VOICE_ID = 'EXAVITQu4vr4xnSDxMaL';
 
 async function generateElevenLabsSpeech(text: string, voiceId: string): Promise<string> {
   const apiKey = process.env.ELEVENLABS_API_KEY;

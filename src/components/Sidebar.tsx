@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Upload, Mail, BellRing, Sparkles, Shield, Image as ImageIcon } from 'lucide-react';
+import { Settings, Mail, BellRing, Sparkles, Shield, Lock } from 'lucide-react';
 import { LanguageOption } from '../types';
 
 interface SidebarProps {
@@ -11,8 +11,6 @@ interface SidebarProps {
   setEndingCTA: (val: string) => void;
   defaultLanguage: LanguageOption;
   setDefaultLanguage: (val: LanguageOption) => void;
-  logoUrl: string | null;
-  setLogoUrl: (val: string | null) => void;
   logoPosition: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
   setLogoPosition: (val: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left') => void;
   logoAnimationStyle: 'spin' | 'pulse' | 'glitch' | 'capcut_badge';
@@ -28,24 +26,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   setEndingCTA,
   defaultLanguage,
   setDefaultLanguage,
-  logoUrl,
-  setLogoUrl,
   logoPosition,
   setLogoPosition,
   logoAnimationStyle,
   setLogoAnimationStyle,
 }) => {
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setLogoUrl(event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   return (
     <aside className="bg-[#0f1015]/90 border-r border-white/10 p-6 space-y-6 w-full lg:w-80 shrink-0">
       <div className="flex items-center gap-2 pb-3 border-b border-white/10 text-[#c5a47e] font-serif italic text-base tracking-wide">
@@ -67,30 +52,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
         />
       </div>
 
-      {/* Channel Logo Upload */}
+      {/* Official Channel Logo (locked — not user-replaceable) */}
       <div className="space-y-2">
         <label className="text-[10px] uppercase tracking-[0.2em] text-white/60 font-medium flex items-center gap-1.5">
-          <ImageIcon className="w-3.5 h-3.5 text-[#c5a47e]" />
+          <Lock className="w-3.5 h-3.5 text-[#c5a47e]" />
           <span>CapCut Watermark Logo</span>
         </label>
-        
+
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 border border-white/15 bg-[#121318] flex items-center justify-center overflow-hidden shrink-0 relative">
-            {logoUrl ? (
-              <img src={logoUrl} alt="Logo" className="w-full h-full object-contain" />
-            ) : (
-              <div className="flex flex-col items-center text-[#c5a47e] text-[9px] font-serif font-bold">
-                <Shield className="w-5 h-5 text-[#c5a47e]" />
-                <span>ACC PK</span>
-              </div>
-            )}
+            <div className="flex flex-col items-center text-[#c5a47e] text-[9px] font-serif font-bold">
+              <Shield className="w-5 h-5 text-[#c5a47e]" />
+              <span>ACC PK</span>
+            </div>
           </div>
 
-          <label className="flex-1 cursor-pointer bg-white/5 hover:bg-white/10 border border-white/15 text-[11px] uppercase tracking-wider text-slate-200 px-3 py-2.5 flex items-center justify-center gap-2 transition-all">
-            <Upload className="w-3.5 h-3.5 text-[#c5a47e]" />
-            <span>{logoUrl ? 'Change PNG' : 'Upload PNG'}</span>
-            <input type="file" accept="image/png,image/jpeg" onChange={handleLogoUpload} className="hidden" />
-          </label>
+          <div className="flex-1 bg-white/[0.02] border border-white/10 text-[11px] text-white/50 px-3 py-2.5 flex items-center gap-2 font-light leading-relaxed">
+            <Lock className="w-3.5 h-3.5 text-[#c5a47e] shrink-0" />
+            <span>Official ACC PK watermark — locked to keep every export on-brand.</span>
+          </div>
         </div>
       </div>
 

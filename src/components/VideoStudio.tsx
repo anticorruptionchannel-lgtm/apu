@@ -34,7 +34,6 @@ interface VideoStudioProps {
   metadata: GeneratedMetadata;
   bgImageUrl: string | null;
   attachedImageUrl: string | null;
-  logoUrl: string | null;
   logoPosition: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
   logoAnimationStyle: 'spin' | 'pulse' | 'glitch' | 'capcut_badge';
   audioUrl?: string | null;
@@ -53,7 +52,6 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
   metadata,
   bgImageUrl,
   attachedImageUrl,
-  logoUrl,
   logoPosition,
   logoAnimationStyle,
   audioUrl,
@@ -82,7 +80,6 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
   // Loaded Global Images
   const bgImgRef = useRef<HTMLImageElement | null>(null);
   const attachedImgRef = useRef<HTMLImageElement | null>(null);
-  const logoImgRef = useRef<HTMLImageElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
 
   // Mirrors of the latest props/state for the playback render loop to read each frame
@@ -127,19 +124,8 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
     }
   }, [attachedImageUrl]);
 
-  // Load Channel Logo
-  useEffect(() => {
-    if (logoUrl) {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        logoImgRef.current = img;
-      };
-      img.src = logoUrl;
-    } else {
-      logoImgRef.current = null;
-    }
-  }, [logoUrl]);
+  // No channel-logo upload: the official ACC PK watermark is always drawn by
+  // drawVideoFrame's built-in default (passing logoImage: null below), see Sidebar.tsx.
 
   // Auto-initialize default scene prompts from metadata
   useEffect(() => {
@@ -211,7 +197,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
         ctx,
         bgImage: bgImgRef.current,
         attachedImage: attachedImgRef.current,
-        logoImage: logoImgRef.current,
+        logoImage: null, // official watermark is always the built-in default, see Sidebar.tsx
         activeSceneImage: currentMedia?.imageElement || null,
         activeSceneVideo: currentMedia?.videoElement || null,
         title: meta.title,
@@ -251,7 +237,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
       ctx,
       bgImage: bgImgRef.current,
       attachedImage: attachedImgRef.current,
-      logoImage: logoImgRef.current,
+      logoImage: null, // official watermark is always the built-in default, see Sidebar.tsx
       activeSceneImage: currentMedia?.imageElement || null,
       activeSceneVideo: currentMedia?.videoElement || null,
       title: metadata.title,
@@ -261,7 +247,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
       logoAnimationStyle,
       channelName,
     });
-  }, [isPlaying, bgImageUrl, attachedImageUrl, logoUrl, metadata, logoPosition, logoAnimationStyle, time, sceneMediaMap, activeSceneIndex]);
+  }, [isPlaying, bgImageUrl, attachedImageUrl, metadata, logoPosition, logoAnimationStyle, time, sceneMediaMap, activeSceneIndex]);
 
   // Handle Play/Pause + Audio Sync
   const togglePlay = () => {

@@ -18,7 +18,8 @@ export default function App() {
     '🔔 Stand up against corruption! Subscribe to ACC PK for daily exposures. Share this video to create a transparent Pakistan!'
   );
   const [defaultLanguage, setDefaultLanguage] = useState<LanguageOption>('urdu');
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  // The channel logo is the official ACC PK watermark drawn by canvasRenderer.ts by
+  // default (no logoUrl) — deliberately not user-configurable, see Sidebar.tsx.
   const [logoPosition, setLogoPosition] = useState<'top-right' | 'top-left' | 'bottom-right' | 'bottom-left'>('top-right');
   const [logoAnimationStyle, setLogoAnimationStyle] = useState<'spin' | 'pulse' | 'glitch' | 'capcut_badge'>('capcut_badge');
 
@@ -173,8 +174,6 @@ export default function App() {
           setEndingCTA={setEndingCTA}
           defaultLanguage={defaultLanguage}
           setDefaultLanguage={setDefaultLanguage}
-          logoUrl={logoUrl}
-          setLogoUrl={setLogoUrl}
           logoPosition={logoPosition}
           setLogoPosition={setLogoPosition}
           logoAnimationStyle={logoAnimationStyle}
@@ -262,7 +261,6 @@ export default function App() {
                   metadata={metadata}
                   bgImageUrl={bgImageUrl}
                   attachedImageUrl={attachedImage}
-                  logoUrl={logoUrl}
                   logoPosition={logoPosition}
                   logoAnimationStyle={logoAnimationStyle}
                   audioUrl={audioUrl}

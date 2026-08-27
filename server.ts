@@ -37,7 +37,7 @@ app.get('/api/health', (req, res) => {
     channel: 'ACC PK Content Engine',
     keysConfigured: {
       gemini: Boolean(process.env.GEMINI_API_KEY),
-      invideo: Boolean(process.env.INVIDEO_API_KEY),
+      coverr: Boolean(process.env.COVERR_API_KEY),
       imageGen: Boolean(process.env.IMAGE_GEN_API_KEY),
       elevenLabs: Boolean(process.env.ELEVENLABS_API_KEY),
     },
@@ -97,7 +97,7 @@ ANTI-CORRUPTION CHANNEL PAKISTAN (ACC PK)
     } else if (language === 'punjabi') {
       langInstructions = 'Write the SCRIPT and NARRATION TEXT in Punjabi (Gurmukhi/Shahmukhi or clear Roman Punjabi) with powerful anti-corruption slogans.';
     } else if (language === 'roman_urdu') {
-      langInstructions = 'Write the SCRIPT and NARRATION TEXT in clean Roman Urdu (e.g., "Mulk main corruption k khilaf awaz uthane ka waqt aa gaya hai...") so it is easy for voice synthesis and subtitles.';
+      langInstructions = 'Write the SCRIPT and NARRATION TEXT in clean Roman Urdu (e.g., "Mulk main corruption k khilaf awaz uthane ka waqt aa gaya hai...") so it is easy for voice synthesis and audience understanding.';
     } else {
       langInstructions = 'Write the SCRIPT and NARRATION TEXT in English with an authoritative, bold investigative journalism tone.';
     }
@@ -108,7 +108,7 @@ ${langInstructions}
 
 Requirements:
 1. POLISHED SCRIPT: Craft an engaging 30-45 second narration script. Ensure it sounds punchy, serious, and captivating.
-2. POLICY SAFETY: Explicitly review the prompt for YouTube community safety. Avoid libel/defamation against named unverified individuals, hate speech, or incitement to violence. State if it is policy-safe and provide recommendations.
+2. POLICY SAFETY: Explicitly review the prompt for YouTube community safety. Avoid libel/defamation against named unverified individuals, hate speech, or incitement to violence. State if it is policy safe.
 3. SCENE BREAKDOWN: Break the narration into 3-4 distinct scenes with visual descriptions and lower-third text overlays.
 4. METADATA: Provide high CTR YouTube Title, Full Description (including contact: ${contactEmail} and CTA: ${endingCTA}), Hashtags, Visual Generation Prompt, and Thumbnail Headline.
 5. CREATIVE VARIATION: ${isRefresh ? 'Generate a totally fresh, unique angle/perspective compared to standard takes.' : 'Generate a hard-hitting, professional broadcast script.'}`;
@@ -282,7 +282,7 @@ app.post('/api/generate-speech', async (req, res) => {
   }
 });
 
-// API: Search Free Stock Media (Pixabay, Pexels, Unsplash)
+// API: Search Free Stock Media (Pixabay, Pexels, Unsplash, Coverr)
 app.get('/api/stock-search', async (req, res) => {
   try {
     const { q, type } = req.query;
@@ -339,6 +339,29 @@ app.get('/api/stock-search', async (req, res) => {
           }
         } catch (e) {
           console.error('Pexels Video API error:', e);
+        }
+      }
+
+      // Coverr Videos (Free alternative)
+      if (process.env.COVERR_API_KEY) {
+        try {
+          const url = `https://api.coverr.co/videos/search?query=${query}&limit=9`;
+          const coverrRes = await fetch(url, { headers: { 'X-API-Key': process.env.COVERR_API_KEY } });
+          if (coverrRes.ok) {
+            const data = await coverrRes.json();
+            data.videos?.forEach((vid: any) => {
+              items.push({
+                id: `coverr_v_${vid.id}`,
+                title: vid.name || 'Coverr Stock Video',
+                type: 'video',
+                url: vid.videoUrl,
+                thumbnail: vid.thumbnailUrl,
+                category: 'Coverr Video'
+              });
+            });
+          }
+        } catch (e) {
+          console.error('Coverr Video API error:', e);
         }
       }
     } else {

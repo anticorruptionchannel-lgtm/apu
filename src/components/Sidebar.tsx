@@ -1,5 +1,5 @@
-import React from 'react';
-import { Settings, Mail, BellRing, Sparkles, Shield, Lock } from 'lucide-react';
+import React, { useState } from 'react';
+import { Settings, Mail, BellRing, Sparkles, Shield, Lock, RefreshCw } from 'lucide-react';
 import { LanguageOption } from '../types';
 
 interface SidebarProps {
@@ -31,6 +31,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
   logoAnimationStyle,
   setLogoAnimationStyle,
 }) => {
+  const [isGeneratingCTA, setIsGeneratingCTA] = useState(false);
+
+  const handleRegenerateCTA = async () => {
+    setIsGeneratingCTA(true);
+    try {
+      const res = await fetch('/api/generate-cta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelName, language: defaultLanguage }),
+      });
+      if (!res.ok) throw new Error('CTA generation failed');
+      const data = await res.json();
+      if (data.cta) setEndingCTA(data.cta);
+    } catch (e) {
+      console.error('Error regenerating CTA:', e);
+    } finally {
+      setIsGeneratingCTA(false);
+    }
+  };
+
   return (
     <aside className="bg-[#0f1015]/90 border-r border-white/10 p-6 space-y-6 w-full lg:w-80 shrink-0">
       <div className="flex items-center gap-2 pb-3 border-b border-white/10 text-[#c5a47e] font-serif italic text-base tracking-wide">
@@ -136,10 +156,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Subscription CTA Hook */}
       <div className="space-y-2">
-        <label className="text-[10px] uppercase tracking-[0.2em] text-white/60 font-medium flex items-center gap-1.5">
-          <BellRing className="w-3.5 h-3.5 text-[#c5a47e]" />
-          <span>Subscribe CTA Ending Hook</span>
-        </label>
+        <div className="flex items-center justify-between">
+          <label className="text-[10px] uppercase tracking-[0.2em] text-white/60 font-medium flex items-center gap-1.5">
+            <BellRing className="w-3.5 h-3.5 text-[#c5a47e]" />
+            <span>Subscribe CTA Ending Hook</span>
+          </label>
+          <button
+            type="button"
+            onClick={handleRegenerateCTA}
+            disabled={isGeneratingCTA}
+            className="text-[9px] uppercase tracking-wider text-[#c5a47e] hover:text-white flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            title="Regenerate a fresh subscribe CTA"
+          >
+            <RefreshCw className={`w-3 h-3 ${isGeneratingCTA ? 'animate-spin' : ''}`} />
+            <span>{isGeneratingCTA ? 'Generating...' : 'Regenerate'}</span>
+          </button>
+        </div>
         <textarea
           value={endingCTA}
           onChange={(e) => setEndingCTA(e.target.value)}

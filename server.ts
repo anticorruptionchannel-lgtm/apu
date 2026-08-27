@@ -354,6 +354,40 @@ ${OFFICIAL_CONTACT_BLOCK}`;
   }
 });
 
+// API: Regenerate a fresh Subscribe CTA ending hook line
+app.post('/api/generate-cta', async (req, res) => {
+  try {
+    const { channelName = 'ACC PK', language = 'english' } = req.body;
+    const ai = getGenAI();
+
+    const langInstruction = language === 'urdu'
+      ? 'in Urdu (اردو script)'
+      : language === 'punjabi'
+        ? 'in Punjabi (Gurmukhi/Shahmukhi)'
+        : language === 'roman_urdu'
+          ? 'in clean Roman Urdu'
+          : 'in English';
+
+    const response = await withRetry(() => ai.models.generateContent({
+      model: 'gemini-3.6-flash',
+      contents: [{
+        parts: [{
+          text: `Write ONE short, punchy YouTube subscribe call-to-action ending hook ${langInstruction} for an investigative anti-corruption channel called "${channelName}". Include one relevant emoji. Keep it under 200 characters, broadcast-ready tone. Return ONLY the CTA line itself, no quotes, no explanation.`
+        }]
+      }],
+    }));
+
+    const cta = response.text?.trim();
+    if (!cta) {
+      throw new Error('Empty CTA response from Gemini AI');
+    }
+    res.json({ cta });
+  } catch (err: any) {
+    console.error('Error generating CTA:', err);
+    res.status(500).json({ error: err.message || 'Failed to generate CTA.' });
+  }
+});
+
 // API: Generate AI Background Image using Pollinations.ai
 app.post('/api/generate-image', async (req, res) => {
   try {

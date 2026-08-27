@@ -178,11 +178,6 @@ app.get('/api/health', (req, res) => {
       elevenLabs: getElevenLabsApiKeys().length > 0,
       elevenLabsKeyCount: getElevenLabsApiKeys().length,
     },
-    socialPostWebhooks: {
-      facebook: Boolean(process.env.ZAPIER_WEBHOOK_FACEBOOK),
-      instagram: Boolean(process.env.ZAPIER_WEBHOOK_INSTAGRAM),
-      linkedin: Boolean(process.env.ZAPIER_WEBHOOK_LINKEDIN),
-    },
   });
 });
 
@@ -509,53 +504,6 @@ app.post('/api/generate-speech', async (req, res) => {
   } catch (err: any) {
     console.error('Error generating speech:', err);
     res.json({ audioUrl: null, message: 'Fallback to client browser speech synthesis' });
-  }
-});
-
-// API: Auto-post to Facebook / Instagram / LinkedIn via a Zapier webhook per platform.
-// Each webhook is a user-configured Zap: "Webhooks by Zapier (Catch Hook)" trigger ->
-// that platform's publish action, mapping its `caption` and `imageUrl` fields from this
-// payload. See LOCAL_SETUP_GUIDE for exact Zap setup steps. imageUrl must be a public
-// URL (Zapier fetches it) — a data: URI or localhost URL won't work.
-const SOCIAL_WEBHOOK_ENV: Record<string, string> = {
-  facebook: 'ZAPIER_WEBHOOK_FACEBOOK',
-  instagram: 'ZAPIER_WEBHOOK_INSTAGRAM',
-  linkedin: 'ZAPIER_WEBHOOK_LINKEDIN',
-};
-
-app.post('/api/social-post', async (req, res) => {
-  try {
-    const { platform, caption, imageUrl } = req.body;
-    if (!platform || !SOCIAL_WEBHOOK_ENV[platform]) {
-      return res.status(400).json({ error: `Unknown platform "${platform}". Expected one of: ${Object.keys(SOCIAL_WEBHOOK_ENV).join(', ')}` });
-    }
-    if (!caption) {
-      return res.status(400).json({ error: 'caption is required' });
-    }
-    if (!imageUrl || !/^https?:\/\//i.test(imageUrl)) {
-      return res.status(400).json({ error: 'imageUrl must be a public http(s) URL — Zapier needs to fetch it directly.' });
-    }
-
-    const webhookUrl = process.env[SOCIAL_WEBHOOK_ENV[platform]];
-    if (!webhookUrl) {
-      return res.status(400).json({ error: `${SOCIAL_WEBHOOK_ENV[platform]} is not configured. See LOCAL_SETUP_GUIDE for how to create that Zap.` });
-    }
-
-    const zapRes = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ caption, imageUrl }),
-    });
-
-    if (!zapRes.ok) {
-      const body = await zapRes.text().catch(() => '');
-      throw new Error(`Zapier webhook returned ${zapRes.status}: ${body}`);
-    }
-
-    res.json({ status: 'queued', platform });
-  } catch (err: any) {
-    console.error('Error posting to social media:', err);
-    res.status(500).json({ error: err.message || 'Failed to post.' });
   }
 });
 

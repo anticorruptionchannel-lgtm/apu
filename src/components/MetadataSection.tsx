@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Copy, Check, ShieldCheck, AlertTriangle, FileText, Hash, Youtube, Mail, BellRing, Share2, Sparkles, Building2, User, Phone, Send, Facebook, Instagram, Linkedin, Loader2 } from 'lucide-react';
+import { Copy, Check, ShieldCheck, AlertTriangle, FileText, Hash, Youtube, Mail, BellRing, Share2, Sparkles, Building2, User, Phone } from 'lucide-react';
 import { GeneratedMetadata } from '../types';
 import { AccPkLogo } from './AccPkLogo';
 import { isArabicScript } from '../utils/scriptDetect';
@@ -8,29 +8,14 @@ interface MetadataSectionProps {
   metadata: GeneratedMetadata;
   contactEmail: string;
   endingCTA: string;
-  bgImageUrl: string | null;
 }
-
-type SocialPlatform = 'facebook' | 'instagram' | 'linkedin';
-type SocialPostState = 'idle' | 'posting' | 'success' | 'error';
 
 export const MetadataSection: React.FC<MetadataSectionProps> = ({
   metadata,
   contactEmail,
   endingCTA,
-  bgImageUrl,
 }) => {
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [socialPostState, setSocialPostState] = useState<Record<SocialPlatform, SocialPostState>>({
-    facebook: 'idle',
-    instagram: 'idle',
-    linkedin: 'idle',
-  });
-  const [socialPostError, setSocialPostError] = useState<Record<SocialPlatform, string | null>>({
-    facebook: null,
-    instagram: null,
-    linkedin: null,
-  });
 
   const handleCopy = (text: string, fieldName: string) => {
     navigator.clipboard.writeText(text);
@@ -69,35 +54,6 @@ ${ALWAYS_SAME_MISSION}
 ${ALWAYS_SAME_CONTACT}
 
 ${formattedHashtags} ${ALWAYS_SAME_HASHTAGS}`;
-
-  // Shorter than the full social post above — title + description + hashtags fits
-  // comfortably under every platform's caption limit (Instagram's 2,200 chars is the
-  // tightest), where the full post (script + mission statement) could run over.
-  const socialCaption = `${metadata.title}\n\n${metadata.description}\n\n${formattedHashtags}`.slice(0, 2000);
-
-  const handlePostToSocial = async (platform: SocialPlatform) => {
-    if (!bgImageUrl) {
-      setSocialPostState((s) => ({ ...s, [platform]: 'error' }));
-      setSocialPostError((s) => ({ ...s, [platform]: 'No background image available to post yet.' }));
-      return;
-    }
-    setSocialPostState((s) => ({ ...s, [platform]: 'posting' }));
-    setSocialPostError((s) => ({ ...s, [platform]: null }));
-    try {
-      const res = await fetch('/api/social-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform, caption: socialCaption, imageUrl: bgImageUrl }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Post failed');
-      setSocialPostState((s) => ({ ...s, [platform]: 'success' }));
-      setTimeout(() => setSocialPostState((s) => ({ ...s, [platform]: 'idle' })), 4000);
-    } catch (e: any) {
-      setSocialPostState((s) => ({ ...s, [platform]: 'error' }));
-      setSocialPostError((s) => ({ ...s, [platform]: e.message || 'Failed to post.' }));
-    }
-  };
 
   return (
     <div className="bg-[#0f1015] border border-white/10 p-6 md:p-8 space-y-6 shadow-2xl">
@@ -190,55 +146,6 @@ ${formattedHashtags} ${ALWAYS_SAME_HASHTAGS}`;
           rows={10}
           className="w-full bg-[#0a0a0c] border border-white/10 p-3.5 text-xs text-slate-200 leading-relaxed font-mono resize-none focus:outline-none"
         />
-      </div>
-
-      {/* Auto-Post to Social Media (via Zapier webhook — requires Zap setup, see LOCAL_SETUP_GUIDE) */}
-      <div className="bg-[#121318] p-5 border border-[#c5a47e]/30 space-y-3">
-        <label className="text-[11px] uppercase tracking-[0.2em] font-semibold text-[#c5a47e] flex items-center gap-2">
-          <Send className="w-4 h-4 text-[#c5a47e]" />
-          <span>Auto-Post to Social Media</span>
-        </label>
-        <p className="text-[11px] text-white/50 leading-relaxed font-light">
-          Posts the title, description, and hashtags above with the generated background image directly to your connected accounts. Requires a one-time Zap setup per platform — see LOCAL_SETUP_GUIDE.txt.
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {([
-            { key: 'facebook' as const, label: 'Facebook Page', Icon: Facebook },
-            { key: 'instagram' as const, label: 'Instagram', Icon: Instagram },
-            { key: 'linkedin' as const, label: 'LinkedIn', Icon: Linkedin },
-          ]).map(({ key, label, Icon }) => {
-            const state = socialPostState[key];
-            return (
-              <div key={key} className="space-y-1.5">
-                <button
-                  onClick={() => handlePostToSocial(key)}
-                  disabled={state === 'posting'}
-                  className={`w-full flex items-center justify-center gap-2 text-[11px] uppercase tracking-wider py-2.5 px-3 border font-semibold transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                    state === 'success'
-                      ? 'bg-emerald-600 border-emerald-600 text-white'
-                      : state === 'error'
-                        ? 'bg-red-950/40 border-red-800 text-red-300'
-                        : 'bg-white/5 hover:bg-white/10 border-white/15 text-white/90'
-                  }`}
-                >
-                  {state === 'posting' ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : state === 'success' ? (
-                    <Check className="w-3.5 h-3.5" />
-                  ) : (
-                    <Icon className="w-3.5 h-3.5 text-[#c5a47e]" />
-                  )}
-                  <span>
-                    {state === 'posting' ? 'Posting...' : state === 'success' ? 'Posted!' : `Post to ${label}`}
-                  </span>
-                </button>
-                {state === 'error' && socialPostError[key] && (
-                  <p className="text-[10px] text-red-400 leading-snug">{socialPostError[key]}</p>
-                )}
-              </div>
-            );
-          })}
-        </div>
       </div>
 
       {/* Grid of Copyable Fields */}

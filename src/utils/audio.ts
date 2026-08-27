@@ -12,56 +12,65 @@ export class NarrationAudioEngine {
   private currentUtterance: SpeechSynthesisUtterance | null = null;
 
   /**
-   * Returns a MediaStream carrying the currently-playing narration audio, so it can be
-   * merged into a canvas MediaRecorder stream for export. Only available when playback
-   * came from a real <audio> element (server-generated TTS) — browser SpeechSynthesis
-   * output cannot be captured into a MediaStream.
+   * Returns the narration audio's tracks (server-generated TTS via a real <audio>
+   * element — browser SpeechSynthesis output can't be captured this way) as an array,
+   * resolving once they're actually capturable. Must be awaited BEFORE constructing a
+   * MediaRecorder: adding a track to a MediaStream a MediaRecorder is already recording
+   * is unreliable in Chrome and has been observed to silently kill the recording within
+   * a fraction of a second, so the caller should build one combined MediaStream (video +
+   * these tracks) upfront and only then create/start the MediaRecorder on it.
    *
-   * Chrome hands back a MediaStream with zero tracks if captureStream() is called before
-   * the element has decoded any data (readyState HAVE_NOTHING) — it does not attach the
-   * track lazily once data arrives — so this waits for playable data first.
+   * Chrome hands back a MediaStream with zero audio tracks if captureStream() is called
+   * before the element has decoded any data, and how long that takes varies with
+   * main-thread load, so this retries on load/playback progress events rather than
+   * giving up on a single short deadline — only a generous outer timeoutMs backstops it.
    */
-  public waitForAudioStream(timeoutMs = 4000): Promise<MediaStream | null> {
+  public getAudioTracks(timeoutMs = 8000): Promise<MediaStreamTrack[]> {
     const audio = this.currentAudio as (HTMLAudioElement & {
       captureStream?: () => MediaStream;
       mozCaptureStream?: () => MediaStream;
     }) | null;
-    if (!audio) return Promise.resolve(null);
+    if (!audio) return Promise.resolve([]);
 
-    const capture = (): MediaStream | null => {
+    const tryCapture = (): MediaStreamTrack[] | null => {
       try {
-        if (typeof audio.captureStream === 'function') return audio.captureStream();
-        if (typeof audio.mozCaptureStream === 'function') return audio.mozCaptureStream();
+        const stream = typeof audio.captureStream === 'function'
+          ? audio.captureStream()
+          : typeof audio.mozCaptureStream === 'function'
+            ? audio.mozCaptureStream()
+            : null;
+        const tracks = stream ? stream.getAudioTracks() : [];
+        return tracks.length > 0 ? tracks : null;
       } catch (e) {
         console.warn('Unable to capture narration audio stream for recording:', e);
+        return [];
       }
-      return null;
     };
 
-    if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-      return Promise.resolve(capture());
-    }
+    const immediate = tryCapture();
+    if (immediate) return Promise.resolve(immediate);
 
     return new Promise((resolve) => {
+      const progressEvents = ['loadeddata', 'canplay', 'playing', 'timeupdate'];
+      const finish = (tracks: MediaStreamTrack[]) => {
+        cleanup();
+        resolve(tracks);
+      };
+      const retry = () => {
+        const tracks = tryCapture();
+        if (tracks) finish(tracks);
+      };
+      const giveUp = () => finish([]);
       const cleanup = () => {
         clearTimeout(timer);
-        audio.removeEventListener('loadeddata', onReady);
-        audio.removeEventListener('canplay', onReady);
-        audio.removeEventListener('error', onFail);
+        progressEvents.forEach((evt) => audio.removeEventListener(evt, retry));
+        audio.removeEventListener('ended', giveUp);
+        audio.removeEventListener('error', giveUp);
       };
-      const onReady = () => {
-        cleanup();
-        resolve(capture());
-      };
-      const onFail = () => {
-        cleanup();
-        resolve(null);
-      };
-      // Best-effort fallback if the audio never fires loadeddata/canplay in time.
-      const timer = setTimeout(onReady, timeoutMs);
-      audio.addEventListener('loadeddata', onReady, { once: true });
-      audio.addEventListener('canplay', onReady, { once: true });
-      audio.addEventListener('error', onFail, { once: true });
+      const timer = setTimeout(giveUp, timeoutMs);
+      progressEvents.forEach((evt) => audio.addEventListener(evt, retry));
+      audio.addEventListener('ended', giveUp, { once: true });
+      audio.addEventListener('error', giveUp, { once: true });
     });
   }
 

@@ -315,7 +315,7 @@ app.post('/api/generate-speech', async (req, res) => {
 
     const ai = getGenAI();
 
-    const response = await ai.models.generateContent({
+    const response = await withRetry(() => ai.models.generateContent({
       model: 'gemini-3.1-flash-tts-preview',
       contents: [{ parts: [{ text: `Say with serious, authoritative news presenter tone: ${text}` }] }],
       config: {
@@ -326,7 +326,7 @@ app.post('/api/generate-speech', async (req, res) => {
           }
         }
       }
-    });
+    }));
 
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
     const rawMimeType = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType || 'audio/mp3';

@@ -6,9 +6,10 @@ import { Sidebar } from './components/Sidebar';
 import { PromptSection } from './components/PromptSection';
 import { VideoStudio } from './components/VideoStudio';
 import { ThumbnailBuilder } from './components/ThumbnailBuilder';
+import { ContactCardBuilder } from './components/ContactCardBuilder';
 import { MetadataSection } from './components/MetadataSection';
 import { GeneratedMetadata, LanguageOption, VideoStyle } from './types';
-import { Shield, Sparkles, Video, Image as ImageIcon, FileText, RefreshCw, AlertCircle, Download } from 'lucide-react';
+import { Shield, Sparkles, Video, Image as ImageIcon, FileText, RefreshCw, AlertCircle, Download, Phone } from 'lucide-react';
 
 export default function App() {
   // Channel & Brand Settings
@@ -18,8 +19,8 @@ export default function App() {
     '🔔 Stand up against corruption! Subscribe to ACC PK for daily exposures. Share this video to create a transparent Pakistan!'
   );
   const [defaultLanguage, setDefaultLanguage] = useState<LanguageOption>('urdu');
-  // The channel logo is the official ACC PK watermark drawn by canvasRenderer.ts by
-  // default (no logoUrl) — deliberately not user-configurable, see Sidebar.tsx.
+  // The channel logo is a fixed bundled official ACC PK asset (src/assets/acc-pk-logo.png)
+  // — deliberately not user-configurable, see Sidebar.tsx.
   const [logoPosition, setLogoPosition] = useState<'top-right' | 'top-left' | 'bottom-right' | 'bottom-left'>('top-right');
   const [logoAnimationStyle, setLogoAnimationStyle] = useState<'spin' | 'pulse' | 'glitch' | 'capcut_badge'>('capcut_badge');
 
@@ -34,7 +35,7 @@ export default function App() {
   // Execution & Output State
   const [generationStage, setGenerationStage] = useState<'idle' | 'scripting' | 'image' | 'audio'>('idle');
   const [generationDone, setGenerationDone] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'video' | 'thumbnail' | 'metadata'>('video');
+  const [activeTab, setActiveTab] = useState<'video' | 'thumbnail' | 'contact' | 'metadata'>('video');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const isGenerating = generationStage !== 'idle';
@@ -235,6 +236,18 @@ export default function App() {
                     </button>
 
                     <button
+                        onClick={() => setActiveTab('contact')}
+                        className={`flex items-center gap-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.15em] transition-all cursor-pointer whitespace-nowrap border ${
+                        activeTab === 'contact'
+                            ? 'bg-[#c5a47e] text-black border-[#c5a47e]'
+                            : 'bg-[#0f1015] text-white/60 hover:text-white border-white/10'
+                        }`}
+                    >
+                        <Phone className="w-4 h-4" />
+                        <span>Contact Card</span>
+                    </button>
+
+                    <button
                         onClick={() => setActiveTab('metadata')}
                         className={`flex items-center gap-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.15em] transition-all cursor-pointer whitespace-nowrap border ${
                         activeTab === 'metadata'
@@ -274,6 +287,13 @@ export default function App() {
                   attachedImageUrl={attachedImage}
                   thumbnailText={metadata.thumbnailText}
                   channelName={channelName}
+                />
+              )}
+
+              {activeTab === 'contact' && (
+                <ContactCardBuilder
+                  channelName={channelName}
+                  contactEmail={contactEmail}
                 />
               )}
 

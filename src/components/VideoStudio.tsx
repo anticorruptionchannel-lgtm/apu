@@ -29,6 +29,7 @@ import { GeneratedMetadata } from '../types';
 import { drawVideoFrame } from '../utils/canvasRenderer';
 import { narrationEngine } from '../utils/audio';
 import { FREE_STOCK_PRESETS, searchFreeStockImages, StockMediaItem } from '../utils/stockMedia';
+import accPkLogoUrl from '../assets/acc-pk-logo.png';
 
 interface VideoStudioProps {
   metadata: GeneratedMetadata;
@@ -68,6 +69,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
   // Per-Scene Media Map (sceneIndex -> SceneMedia)
   const [sceneMediaMap, setSceneMediaMap] = useState<Record<number, SceneMedia>>({});
   const [generatingSceneIdx, setGeneratingSceneIdx] = useState<number | null>(null);
+  const [sceneImageErrorIdx, setSceneImageErrorIdx] = useState<number | null>(null);
   const [editingPromptIdx, setEditingPromptIdx] = useState<number | null>(null);
   const [copiedPromptIdx, setCopiedPromptIdx] = useState<number | null>(null);
 
@@ -80,6 +82,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
   // Loaded Global Images
   const bgImgRef = useRef<HTMLImageElement | null>(null);
   const attachedImgRef = useRef<HTMLImageElement | null>(null);
+  const logoImgRef = useRef<HTMLImageElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
 
   // Mirrors of the latest props/state for the playback render loop to read each frame
@@ -124,8 +127,20 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
     }
   }, [attachedImageUrl]);
 
-  // No channel-logo upload: the official ACC PK watermark is always drawn by
-  // drawVideoFrame's built-in default (passing logoImage: null below), see Sidebar.tsx.
+  // Official channel logo — a fixed bundled asset, not user-uploadable (see Sidebar.tsx).
+  // Loaded once; the actual PNG file is untouched other than making its background
+  // transparent (see src/assets/acc-pk-logo.png). logoVersion forces one static-frame
+  // redraw once loading completes (loading it into a ref alone wouldn't trigger a
+  // re-render); the playback loop below doesn't need this since it redraws every frame.
+  const [logoVersion, setLogoVersion] = useState(0);
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      logoImgRef.current = img;
+      setLogoVersion((v) => v + 1);
+    };
+    img.src = accPkLogoUrl;
+  }, []);
 
   // Auto-initialize default scene prompts from metadata
   useEffect(() => {
@@ -197,7 +212,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
         ctx,
         bgImage: bgImgRef.current,
         attachedImage: attachedImgRef.current,
-        logoImage: null, // official watermark is always the built-in default, see Sidebar.tsx
+        logoImage: logoImgRef.current, // official ACC PK logo asset, not user-replaceable
         activeSceneImage: currentMedia?.imageElement || null,
         activeSceneVideo: currentMedia?.videoElement || null,
         title: meta.title,
@@ -237,7 +252,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
       ctx,
       bgImage: bgImgRef.current,
       attachedImage: attachedImgRef.current,
-      logoImage: null, // official watermark is always the built-in default, see Sidebar.tsx
+      logoImage: logoImgRef.current, // official ACC PK logo asset, not user-replaceable
       activeSceneImage: currentMedia?.imageElement || null,
       activeSceneVideo: currentMedia?.videoElement || null,
       title: metadata.title,
@@ -247,7 +262,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
       logoAnimationStyle,
       channelName,
     });
-  }, [isPlaying, bgImageUrl, attachedImageUrl, metadata, logoPosition, logoAnimationStyle, time, sceneMediaMap, activeSceneIndex]);
+  }, [isPlaying, bgImageUrl, attachedImageUrl, metadata, logoPosition, logoAnimationStyle, time, sceneMediaMap, activeSceneIndex, logoVersion]);
 
   // Handle Play/Pause + Audio Sync
   const togglePlay = () => {
@@ -285,11 +300,33 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
     setActiveSceneIndex(0);
   };
 
+  // Loads an <img> for a generated URL, rejecting on error OR on a timeout — Pollinations.ai
+  // (the free, keyless image backend) is occasionally slow/flaky, and without a timeout an
+  // image that never fires onload/onerror leaves the "Generating..." button stuck forever.
+  const loadImageWithTimeout = (imageUrl: string, timeoutMs = 20000): Promise<HTMLImageElement> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      const timer = setTimeout(() => reject(new Error('Image load timed out')), timeoutMs);
+      img.onload = () => {
+        clearTimeout(timer);
+        resolve(img);
+      };
+      img.onerror = () => {
+        clearTimeout(timer);
+        reject(new Error('Image failed to load'));
+      };
+      img.src = imageUrl;
+    });
+  };
+
   // Generate AI Image for specific scene
   const handleGenerateSceneImage = async (idx: number) => {
     setGeneratingSceneIdx(idx);
-    try {
-      const scenePrompt = sceneMediaMap[idx]?.prompt || metadata.scenes?.[idx]?.visualDescription || metadata.visualPrompt;
+    setSceneImageErrorIdx(null);
+    const scenePrompt = sceneMediaMap[idx]?.prompt || metadata.scenes?.[idx]?.visualDescription || metadata.visualPrompt;
+
+    const attempt = async () => {
       const response = await fetch('/api/generate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -299,30 +336,36 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
         }),
       });
 
-      if (!response.ok) throw new Error('Image generation failed');
+      if (!response.ok) throw new Error('Image generation request failed');
       const data = await response.json();
-      const imageUrl = data.imageUrl;
+      if (!data.imageUrl) throw new Error('No image URL returned');
 
-      if (imageUrl) {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => {
-          setSceneMediaMap((prev) => ({
-            ...prev,
-            [idx]: {
-              ...(prev[idx] || { prompt: scenePrompt }),
-              url: imageUrl,
-              type: 'image',
-              imageElement: img,
-              videoElement: undefined,
-            },
-          }));
-          setGeneratingSceneIdx(null);
-        };
-        img.src = imageUrl;
+      const img = await loadImageWithTimeout(data.imageUrl);
+      setSceneMediaMap((prev) => ({
+        ...prev,
+        [idx]: {
+          ...(prev[idx] || { prompt: scenePrompt }),
+          url: data.imageUrl,
+          type: 'image',
+          imageElement: img,
+          videoElement: undefined,
+        },
+      }));
+    };
+
+    try {
+      try {
+        await attempt();
+      } catch (firstErr) {
+        // One silent retry — the server picks a fresh random seed each call, so a
+        // transient Pollinations.ai hiccup usually succeeds on the second try.
+        console.warn('Scene image generation failed, retrying once:', firstErr);
+        await attempt();
       }
     } catch (e) {
       console.error('Error generating scene image:', e);
+      setSceneImageErrorIdx(idx);
+    } finally {
       setGeneratingSceneIdx(null);
     }
   };
@@ -731,6 +774,12 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
                       <Sparkles className="w-3.5 h-3.5 text-black" />
                       <span>{isGeneratingThis ? 'Generating Image...' : 'Generate AI Image'}</span>
                     </button>
+
+                    {sceneImageErrorIdx === idx && (
+                      <p className="text-[10px] text-red-400 leading-snug">
+                        Image generation failed after retrying — try again, or use Upload/Free Stock instead.
+                      </p>
+                    )}
 
                     <div className="grid grid-cols-2 gap-2">
                       {/* Upload Picture or Video File Button */}

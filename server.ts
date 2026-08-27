@@ -28,6 +28,28 @@ function getGenAI() {
   });
 }
 
+// Gemini briefly returns 503 UNAVAILABLE / 429 RESOURCE_EXHAUSTED under normal load spikes.
+// Without a retry, one transient blip kills the whole script/image/speech pipeline and no
+// video gets produced at all, so retry those with backoff before giving up.
+function isRetryableGenAIError(err: any): boolean {
+  const status = err?.status ?? err?.error?.code;
+  const message = String(err?.message || '');
+  return status === 503 || status === 429 || /UNAVAILABLE|RESOURCE_EXHAUSTED/i.test(message);
+}
+
+async function withRetry<T>(fn: () => Promise<T>, retries = 2, baseDelayMs = 1000): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= retries || !isRetryableGenAIError(err)) throw err;
+      const delay = baseDelayMs * Math.pow(2, attempt);
+      console.warn(`Gemini call failed with a retryable error (attempt ${attempt + 1}/${retries + 1}), retrying in ${delay}ms...`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 // ----------------- API ENDPOINTS -----------------
 
 // Health check & API Keys Status
@@ -133,7 +155,7 @@ ${isRefresh ? 'Note: User clicked REFRESH! Give a fresh unique creative angle.' 
       parts.push({ text: 'Analyze this uploaded issue image/document to tailor the background visual prompts and script specifically to the evidence shown in the photo.' });
     }
 
-    const response = await ai.models.generateContent({
+    const response = await withRetry(() => ai.models.generateContent({
       model: 'gemini-3.6-flash',
       contents: { parts },
       config: {
@@ -178,7 +200,7 @@ ${isRefresh ? 'Note: User clicked REFRESH! Give a fresh unique creative angle.' 
           required: ['title', 'script', 'description', 'hashtags', 'visualPrompt', 'thumbnailText', 'policyStatus', 'scenes']
         },
       },
-    });
+    }));
 
     const resultText = response.text;
     if (!resultText) {
@@ -245,6 +267,44 @@ app.post('/api/generate-image', async (req, res) => {
   }
 });
 
+// Gemini TTS returns raw headerless PCM (typically "audio/L16;rate=24000;channels=1"),
+// which no <audio> element can decode. Detect that and wrap it in a WAV header so the
+// browser can actually play it instead of silently failing and killing the recording.
+function parsePcmMimeType(mimeType: string): { rate: number; channels: number } | null {
+  const lower = mimeType.toLowerCase();
+  if (!lower.startsWith('audio/l16') && !lower.startsWith('audio/pcm')) return null;
+  const rateMatch = lower.match(/rate=(\d+)/);
+  const channelsMatch = lower.match(/channels=(\d+)/);
+  return {
+    rate: rateMatch ? parseInt(rateMatch[1], 10) : 24000,
+    channels: channelsMatch ? parseInt(channelsMatch[1], 10) : 1,
+  };
+}
+
+function pcmToWavBase64(pcmBase64: string, sampleRate: number, channels: number, bitsPerSample = 16): string {
+  const pcmBuffer = Buffer.from(pcmBase64, 'base64');
+  const byteRate = sampleRate * channels * (bitsPerSample / 8);
+  const blockAlign = channels * (bitsPerSample / 8);
+  const dataSize = pcmBuffer.length;
+
+  const header = Buffer.alloc(44);
+  header.write('RIFF', 0, 'ascii');
+  header.writeUInt32LE(36 + dataSize, 4);
+  header.write('WAVE', 8, 'ascii');
+  header.write('fmt ', 12, 'ascii');
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); // PCM format
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write('data', 36, 'ascii');
+  header.writeUInt32LE(dataSize, 40);
+
+  return Buffer.concat([header, pcmBuffer]).toString('base64');
+}
+
 // API: Generate Speech Audio (TTS using Gemini TTS)
 app.post('/api/generate-speech', async (req, res) => {
   try {
@@ -269,10 +329,14 @@ app.post('/api/generate-speech', async (req, res) => {
     });
 
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    const mimeType = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType || 'audio/mp3';
+    const rawMimeType = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType || 'audio/mp3';
 
     if (base64Audio) {
-      res.json({ audioUrl: `data:${mimeType};base64,${base64Audio}` });
+      const pcmInfo = parsePcmMimeType(rawMimeType);
+      const audioUrl = pcmInfo
+        ? `data:audio/wav;base64,${pcmToWavBase64(base64Audio, pcmInfo.rate, pcmInfo.channels)}`
+        : `data:${rawMimeType};base64,${base64Audio}`;
+      res.json({ audioUrl });
     } else {
       res.json({ audioUrl: null, message: 'Audio stream unavailable, browser synthesis fallback will be used.' });
     }

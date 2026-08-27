@@ -11,6 +11,60 @@ export class NarrationAudioEngine {
   private currentAudio: HTMLAudioElement | null = null;
   private currentUtterance: SpeechSynthesisUtterance | null = null;
 
+  /**
+   * Returns a MediaStream carrying the currently-playing narration audio, so it can be
+   * merged into a canvas MediaRecorder stream for export. Only available when playback
+   * came from a real <audio> element (server-generated TTS) — browser SpeechSynthesis
+   * output cannot be captured into a MediaStream.
+   *
+   * Chrome hands back a MediaStream with zero tracks if captureStream() is called before
+   * the element has decoded any data (readyState HAVE_NOTHING) — it does not attach the
+   * track lazily once data arrives — so this waits for playable data first.
+   */
+  public waitForAudioStream(timeoutMs = 4000): Promise<MediaStream | null> {
+    const audio = this.currentAudio as (HTMLAudioElement & {
+      captureStream?: () => MediaStream;
+      mozCaptureStream?: () => MediaStream;
+    }) | null;
+    if (!audio) return Promise.resolve(null);
+
+    const capture = (): MediaStream | null => {
+      try {
+        if (typeof audio.captureStream === 'function') return audio.captureStream();
+        if (typeof audio.mozCaptureStream === 'function') return audio.mozCaptureStream();
+      } catch (e) {
+        console.warn('Unable to capture narration audio stream for recording:', e);
+      }
+      return null;
+    };
+
+    if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      return Promise.resolve(capture());
+    }
+
+    return new Promise((resolve) => {
+      const cleanup = () => {
+        clearTimeout(timer);
+        audio.removeEventListener('loadeddata', onReady);
+        audio.removeEventListener('canplay', onReady);
+        audio.removeEventListener('error', onFail);
+      };
+      const onReady = () => {
+        cleanup();
+        resolve(capture());
+      };
+      const onFail = () => {
+        cleanup();
+        resolve(null);
+      };
+      // Best-effort fallback if the audio never fires loadeddata/canplay in time.
+      const timer = setTimeout(onReady, timeoutMs);
+      audio.addEventListener('loadeddata', onReady, { once: true });
+      audio.addEventListener('canplay', onReady, { once: true });
+      audio.addEventListener('error', onFail, { once: true });
+    });
+  }
+
   public stop() {
     if (this.currentAudio) {
       this.currentAudio.pause();

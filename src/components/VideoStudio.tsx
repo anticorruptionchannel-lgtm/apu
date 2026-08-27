@@ -405,14 +405,49 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
   };
 
   // Record Canvas Video using MediaRecorder
-  const handleRecordVideo = () => {
+  const handleRecordVideo = async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     try {
+      // Start every export from scene 0 so a prior scrubbed preview doesn't
+      // skip scenes or end the recording early.
+      narrationEngine.stop();
+      setTime(0);
+      setActiveSceneIndex(0);
       setIsRecording(true);
-      const stream = canvas.captureStream(30);
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+
+      const canvasStream = canvas.captureStream(30);
+
+      // Total time needed to cycle through every scene at least once
+      // (matches the 10s-per-scene timing used in the render loop above).
+      const sceneCount = metadata.scenes?.length || 1;
+      const minSceneCoverageSecs = sceneCount * 10;
+
+      let mediaRecorder: MediaRecorder;
+
+      narrationEngine.speak({
+        text: metadata.script,
+        language: metadata.language,
+        audioUrl: audioUrl,
+        onEnd: () => {
+          if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+        },
+      });
+
+      // Attach the narration audio track (when it came from server TTS) so the
+      // exported file isn't silent. Browser SpeechSynthesis output can't be
+      // captured into a MediaStream, so recordings without audioUrl stay video-only.
+      // Must wait for the audio to have decoded data first — Chrome hands back a
+      // zero-track MediaStream if captureStream() is called any earlier.
+      const narrationStream = await narrationEngine.waitForAudioStream();
+      if (narrationStream) {
+        narrationStream.getAudioTracks().forEach((track) => canvasStream.addTrack(track));
+      }
+
+      const supportedMime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+        .find((mime) => MediaRecorder.isTypeSupported(mime)) || 'video/webm';
+      mediaRecorder = new MediaRecorder(canvasStream, { mimeType: supportedMime });
       const chunks: Blob[] = [];
 
       mediaRecorder.ondataavailable = (e) => {
@@ -424,27 +459,22 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
         const url = URL.createObjectURL(blob);
         setRecordedVideoUrl(url);
         setIsRecording(false);
+        setIsPlaying(false);
       };
 
       mediaRecorder.start();
       setIsPlaying(true);
 
-      narrationEngine.speak({
-        text: metadata.script,
-        language: metadata.language,
-        audioUrl: audioUrl,
-        onEnd: () => {
-          mediaRecorder.stop();
-          setIsPlaying(false);
-        },
-      });
-
+      // Safety net only — normal recordings end via onEnd above once narration
+      // finishes. This just guards against speech synthesis/audio never firing
+      // onEnd, so it must comfortably exceed both the script length and the
+      // full scene rotation.
+      const safetyCapSecs = Math.max(minSceneCoverageSecs, 45) + 15;
       setTimeout(() => {
         if (mediaRecorder.state === 'recording') {
           mediaRecorder.stop();
-          setIsPlaying(false);
         }
-      }, 20000);
+      }, safetyCapSecs * 1000);
     } catch (e) {
       console.error('Canvas video recording error:', e);
       setIsRecording(false);

@@ -85,6 +85,20 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
   const logoImgRef = useRef<HTMLImageElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
 
+  // Mirrors of the latest props/state for the playback render loop to read each frame
+  // without being in its effect's dependency array (see the loop's own comment below).
+  const metadataRef = useRef(metadata);
+  const sceneMediaMapRef = useRef(sceneMediaMap);
+  const logoPositionRef = useRef(logoPosition);
+  const logoAnimationStyleRef = useRef(logoAnimationStyle);
+  const channelNameRef = useRef(channelName);
+
+  useEffect(() => { metadataRef.current = metadata; }, [metadata]);
+  useEffect(() => { sceneMediaMapRef.current = sceneMediaMap; }, [sceneMediaMap]);
+  useEffect(() => { logoPositionRef.current = logoPosition; }, [logoPosition]);
+  useEffect(() => { logoAnimationStyleRef.current = logoAnimationStyle; }, [logoAnimationStyle]);
+  useEffect(() => { channelNameRef.current = channelName; }, [channelName]);
+
   // Load BG Image
   useEffect(() => {
     if (bgImageUrl) {
@@ -149,8 +163,16 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
     }
   }, [metadata]);
 
-  // Canvas loop
+  // Canvas playback loop. Deliberately depends ONLY on isPlaying: the loop itself calls
+  // setTime/setActiveSceneIndex/setCurrentCaption every frame, and this effect used to
+  // also depend on time/activeSceneIndex/sceneMediaMap/metadata/etc — so every frame's
+  // state update retriggered the effect, whose cleanup cancelled the just-scheduled
+  // requestAnimationFrame before the browser ever got a chance to fire it. Net effect:
+  // isPlaying stayed true but drawVideoFrame was never actually called, producing a
+  // frozen canvas (and, when recorded, an empty/near-empty video). Everything the loop
+  // needs beyond isPlaying is read from the refs above so it never restarts mid-playback.
   useEffect(() => {
+    if (!isPlaying) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -162,25 +184,27 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
       localTime += 0.033; // ~30fps step
       setTime(localTime);
 
+      const meta = metadataRef.current;
+
       // Determine active scene based on time (10 seconds per scene)
       let sIndex = 0;
-      if (metadata.scenes && metadata.scenes.length > 0) {
+      let caption = meta.script.slice(0, 60);
+      if (meta.scenes && meta.scenes.length > 0) {
         const sceneDuration = 10;
         sIndex = Math.min(
-          Math.floor(localTime / sceneDuration) % metadata.scenes.length,
-          metadata.scenes.length - 1
+          Math.floor(localTime / sceneDuration) % meta.scenes.length,
+          meta.scenes.length - 1
         );
         setActiveSceneIndex(sIndex);
-        const scene = metadata.scenes[sIndex];
+        const scene = meta.scenes[sIndex];
         if (scene) {
-          setCurrentCaption(scene.suggestedOverlayText || scene.narrationText);
+          caption = scene.suggestedOverlayText || scene.narrationText;
         }
-      } else {
-        setCurrentCaption(metadata.script.slice(0, 60));
       }
+      setCurrentCaption(caption);
 
       // Check active scene media
-      const currentMedia = sceneMediaMap[sIndex];
+      const currentMedia = sceneMediaMapRef.current[sIndex];
 
       drawVideoFrame({
         canvas,
@@ -190,46 +214,53 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
         logoImage: logoImgRef.current,
         activeSceneImage: currentMedia?.imageElement || null,
         activeSceneVideo: currentMedia?.videoElement || null,
-        title: metadata.title,
-        currentCaption,
+        title: meta.title,
+        currentCaption: caption,
         time: localTime,
-        logoPosition,
-        logoAnimationStyle,
-        channelName,
+        logoPosition: logoPositionRef.current,
+        logoAnimationStyle: logoAnimationStyleRef.current,
+        channelName: channelNameRef.current,
       });
 
-      if (isPlaying) {
-        animationFrameRef.current = requestAnimationFrame(renderLoop);
-      }
+      animationFrameRef.current = requestAnimationFrame(renderLoop);
     };
 
-    if (isPlaying) {
-      animationFrameRef.current = requestAnimationFrame(renderLoop);
-    } else {
-      // Draw static frame for active scene
-      const currentMedia = sceneMediaMap[activeSceneIndex];
-      drawVideoFrame({
-        canvas,
-        ctx,
-        bgImage: bgImgRef.current,
-        attachedImage: attachedImgRef.current,
-        logoImage: logoImgRef.current,
-        activeSceneImage: currentMedia?.imageElement || null,
-        activeSceneVideo: currentMedia?.videoElement || null,
-        title: metadata.title,
-        currentCaption: metadata.scenes?.[activeSceneIndex]?.suggestedOverlayText || metadata.script.slice(0, 50),
-        time,
-        logoPosition,
-        logoAnimationStyle,
-        channelName,
-      });
-    }
+    animationFrameRef.current = requestAnimationFrame(renderLoop);
 
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
+  }, [isPlaying]);
+
+  // Redraw a single static preview frame whenever paused and any of these change (a new
+  // scene image is picked, the logo is updated, metadata refreshes, etc). Separate from
+  // the playback loop above on purpose — this one only ever draws once per change, so it
+  // can safely depend on everything without risking the runaway-cancel bug.
+  useEffect(() => {
+    if (isPlaying) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const currentMedia = sceneMediaMap[activeSceneIndex];
+    drawVideoFrame({
+      canvas,
+      ctx,
+      bgImage: bgImgRef.current,
+      attachedImage: attachedImgRef.current,
+      logoImage: logoImgRef.current,
+      activeSceneImage: currentMedia?.imageElement || null,
+      activeSceneVideo: currentMedia?.videoElement || null,
+      title: metadata.title,
+      currentCaption: metadata.scenes?.[activeSceneIndex]?.suggestedOverlayText || metadata.script.slice(0, 50),
+      time,
+      logoPosition,
+      logoAnimationStyle,
+      channelName,
+    });
   }, [isPlaying, bgImageUrl, attachedImageUrl, logoUrl, metadata, logoPosition, logoAnimationStyle, time, sceneMediaMap, activeSceneIndex]);
 
   // Handle Play/Pause + Audio Sync
@@ -405,14 +436,51 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
   };
 
   // Record Canvas Video using MediaRecorder
-  const handleRecordVideo = () => {
+  const handleRecordVideo = async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     try {
+      // Start every export from scene 0 so a prior scrubbed preview doesn't
+      // skip scenes or end the recording early.
+      narrationEngine.stop();
+      setTime(0);
+      setActiveSceneIndex(0);
       setIsRecording(true);
-      const stream = canvas.captureStream(30);
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+
+      // Total time needed to cycle through every scene at least once
+      // (matches the 10s-per-scene timing used in the render loop above).
+      const sceneCount = metadata.scenes?.length || 1;
+      const minSceneCoverageSecs = sceneCount * 10;
+
+      let mediaRecorder: MediaRecorder;
+
+      narrationEngine.speak({
+        text: metadata.script,
+        language: metadata.language,
+        audioUrl: audioUrl,
+        onEnd: () => {
+          if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+        },
+      });
+
+      // Resolve the narration audio track (when it came from server TTS) and attach it
+      // onto the canvas's own captureStream() object BEFORE the recorder is created —
+      // adding a track to a MediaStream a MediaRecorder is already recording has been
+      // observed to silently kill the recording within a fraction of a second in Chrome,
+      // and wrapping the tracks in a freshly-constructed MediaStream (instead of mutating
+      // the canvas's native one) has been observed to produce an empty recording, so
+      // this must both happen before start() and use the canvas's stream object directly.
+      // Browser SpeechSynthesis output can't be captured into a MediaStream, so
+      // recordings without server TTS audio stay video-only.
+      const audioTracks = await narrationEngine.getAudioTracks();
+      const canvasStream = canvas.captureStream(30);
+      audioTracks.forEach((track) => canvasStream.addTrack(track));
+
+      const mimeType = audioTracks.length > 0 && MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+        ? 'video/webm;codecs=vp9,opus'
+        : 'video/webm';
+      mediaRecorder = new MediaRecorder(canvasStream, { mimeType });
       const chunks: Blob[] = [];
 
       mediaRecorder.ondataavailable = (e) => {
@@ -424,27 +492,22 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
         const url = URL.createObjectURL(blob);
         setRecordedVideoUrl(url);
         setIsRecording(false);
+        setIsPlaying(false);
       };
 
       mediaRecorder.start();
       setIsPlaying(true);
 
-      narrationEngine.speak({
-        text: metadata.script,
-        language: metadata.language,
-        audioUrl: audioUrl,
-        onEnd: () => {
-          mediaRecorder.stop();
-          setIsPlaying(false);
-        },
-      });
-
+      // Safety net only — normal recordings end via onEnd above once narration
+      // finishes. This just guards against speech synthesis/audio never firing
+      // onEnd, so it must comfortably exceed both the script length and the
+      // full scene rotation.
+      const safetyCapSecs = Math.max(minSceneCoverageSecs, 45) + 15;
       setTimeout(() => {
         if (mediaRecorder.state === 'recording') {
           mediaRecorder.stop();
-          setIsPlaying(false);
         }
-      }, 20000);
+      }, safetyCapSecs * 1000);
     } catch (e) {
       console.error('Canvas video recording error:', e);
       setIsRecording(false);

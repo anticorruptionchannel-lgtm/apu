@@ -37,17 +37,77 @@ function isRetryableGenAIError(err: any): boolean {
   return status === 503 || status === 429 || /UNAVAILABLE|RESOURCE_EXHAUSTED/i.test(message);
 }
 
-async function withRetry<T>(fn: () => Promise<T>, retries = 2, baseDelayMs = 1000): Promise<T> {
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  retries = 2,
+  baseDelayMs = 1000,
+  isRetryable: (err: any) => boolean = isRetryableGenAIError
+): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
       return await fn();
     } catch (err) {
-      if (attempt >= retries || !isRetryableGenAIError(err)) throw err;
+      if (attempt >= retries || !isRetryable(err)) throw err;
       const delay = baseDelayMs * Math.pow(2, attempt);
-      console.warn(`Gemini call failed with a retryable error (attempt ${attempt + 1}/${retries + 1}), retrying in ${delay}ms...`);
+      console.warn(`Call failed with a retryable error (attempt ${attempt + 1}/${retries + 1}), retrying in ${delay}ms...`);
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
+}
+
+// ElevenLabs' eleven_v3 model explicitly supports Urdu and Punjabi (unlike
+// eleven_multilingual_v2, which doesn't) — a real fit for this app's narration
+// languages — so prefer it over Gemini TTS when configured. "Sarah" is the default
+// (one of ElevenLabs' current default premade voices, confirmed API-accessible on
+// free tier); override per-request or via ELEVENLABS_VOICE_ID. Note: some older
+// voice IDs from ElevenLabs' public docs/tutorials (e.g. the classic "Rachel" ID)
+// have since been retired from free-tier direct API access and return a 402
+// "library voice" error — stick to IDs returned by GET /v1/voices for your account.
+const ELEVENLABS_DEFAULT_VOICE_ID = 'EXAVITQu4vr4xnSDxMaL';
+
+async function generateElevenLabsSpeech(text: string, voiceId: string): Promise<string> {
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) {
+    throw new Error('ELEVENLABS_API_KEY environment variable is not set.');
+  }
+
+  const isRetryableHttpError = (err: any) => err?.status === 429 || err?.status === 503;
+
+  return withRetry(
+    async () => {
+      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+        method: 'POST',
+        headers: {
+          'xi-api-key': apiKey,
+          'Content-Type': 'application/json',
+          Accept: 'audio/mpeg',
+        },
+        body: JSON.stringify({
+          text,
+          model_id: 'eleven_v3',
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75,
+            use_speaker_boost: true,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => '');
+        const error: any = new Error(`ElevenLabs TTS failed: ${response.status} ${errBody}`);
+        error.status = response.status;
+        throw error;
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const base64Audio = Buffer.from(arrayBuffer).toString('base64');
+      return `data:audio/mpeg;base64,${base64Audio}`;
+    },
+    2,
+    1000,
+    isRetryableHttpError
+  );
 }
 
 // ----------------- API ENDPOINTS -----------------
@@ -308,9 +368,21 @@ function pcmToWavBase64(pcmBase64: string, sampleRate: number, channels: number,
 // API: Generate Speech Audio (TTS using Gemini TTS)
 app.post('/api/generate-speech', async (req, res) => {
   try {
-    const { text, voiceName = 'Kore' } = req.body;
+    const { text, voiceName = 'Kore', voiceId } = req.body;
     if (!text) {
       return res.status(400).json({ error: 'Text is required for TTS' });
+    }
+
+    // Prefer ElevenLabs when configured — better voice quality and a more generous
+    // free tier than Gemini TTS's 10-requests/day limit, and eleven_v3 explicitly
+    // supports Urdu/Punjabi. Falls through to Gemini TTS below on any failure.
+    if (process.env.ELEVENLABS_API_KEY) {
+      try {
+        const audioUrl = await generateElevenLabsSpeech(text, voiceId || process.env.ELEVENLABS_VOICE_ID || ELEVENLABS_DEFAULT_VOICE_ID);
+        return res.json({ audioUrl, provider: 'elevenlabs' });
+      } catch (elevenErr: any) {
+        console.error('ElevenLabs TTS failed, falling back to Gemini TTS:', elevenErr);
+      }
     }
 
     const ai = getGenAI();
@@ -336,7 +408,7 @@ app.post('/api/generate-speech', async (req, res) => {
       const audioUrl = pcmInfo
         ? `data:audio/wav;base64,${pcmToWavBase64(base64Audio, pcmInfo.rate, pcmInfo.channels)}`
         : `data:${rawMimeType};base64,${base64Audio}`;
-      res.json({ audioUrl });
+      res.json({ audioUrl, provider: 'gemini' });
     } else {
       res.json({ audioUrl: null, message: 'Audio stream unavailable, browser synthesis fallback will be used.' });
     }

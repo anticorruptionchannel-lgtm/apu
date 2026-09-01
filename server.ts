@@ -535,7 +535,15 @@ app.get('/api/stock-search', async (req, res) => {
                   title: hit.tags || 'Pixabay Stock Video',
                   type: 'video',
                   url: hit.videos.medium.url,
-                  thumbnail: hit.picture_id ? `https://i.vimeocdn.com/video/${hit.picture_id}_295x166.jpg` : '',
+                  // Pixabay dropped the `picture_id` field this used to read, so every
+                  // Pixabay result came back with an empty thumbnail and rendered as a
+                  // blank tile in the stock picker. Each size now carries its own
+                  // `thumbnail` URL directly.
+                  thumbnail:
+                    hit.videos.medium.thumbnail ||
+                    hit.videos.small?.thumbnail ||
+                    hit.videos.large?.thumbnail ||
+                    '',
                   category: 'Pixabay Video'
                 });
               }

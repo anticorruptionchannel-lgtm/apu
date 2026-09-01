@@ -171,8 +171,8 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
   }, [attachedImageUrl]);
 
   // Official channel logo — a fixed bundled asset, not user-uploadable (see Sidebar.tsx).
-  // Loaded once; the actual PNG file is untouched other than making its background
-  // transparent (see src/assets/acc-pk-logo.png). logoVersion forces one static-frame
+  // Loaded once; the PNG is the supplied artwork byte-for-byte, unmodified
+  // (see src/assets/acc-pk-logo.png). logoVersion forces one static-frame
   // redraw once loading completes (loading it into a ref alone wouldn't trigger a
   // re-render); the playback loop below doesn't need this since it redraws every frame.
   const [logoVersion, setLogoVersion] = useState(0);

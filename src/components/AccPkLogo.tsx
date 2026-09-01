@@ -8,8 +8,8 @@ interface AccPkLogoProps {
 }
 
 // The official ACC PK logo image — not a recreation. Only ever resized here, never
-// redrawn or altered (see src/assets/acc-pk-logo.png for the one edit made to the
-// source file: making its solid white background transparent).
+// redrawn or altered. src/assets/acc-pk-logo.png is the supplied artwork byte-for-byte,
+// including its solid black backing square.
 export const AccPkLogo: React.FC<AccPkLogoProps> = ({
   className = '',
   size = 'md',

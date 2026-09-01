@@ -391,7 +391,7 @@ app.post('/api/generate-cta', async (req, res) => {
 // API: Generate AI Background Image using Pollinations.ai
 app.post('/api/generate-image', async (req, res) => {
   try {
-    const { visualPrompt, aspectRatio = '16:9' } = req.body;
+    const { visualPrompt, aspectRatio = '16:9', seed: requestedSeed } = req.body;
     if (!visualPrompt) {
       return res.status(400).json({ error: 'visualPrompt is required' });
     }
@@ -403,8 +403,13 @@ app.post('/api/generate-image', async (req, res) => {
     const height = aspectRatio === '16:9' ? 720 : 1024;
     const encodedPrompt = encodeURIComponent(prompt);
     
-    // Adding random seed to ensure uniqueness per request
-    const seed = Math.floor(Math.random() * 1000000);
+    // Random seed by default so repeat requests don't return the same picture. Callers
+    // that need a *specific* seed pass one — the scene clip generator does this to pull
+    // several related-but-distinct frames of the same prompt for its animation.
+    const parsedSeed = Number(requestedSeed);
+    const seed = Number.isFinite(parsedSeed)
+      ? Math.abs(Math.floor(parsedSeed)) % 1000000
+      : Math.floor(Math.random() * 1000000);
     const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&nologo=true&seed=${seed}`;
 
     res.json({ imageUrl });

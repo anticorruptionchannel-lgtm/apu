@@ -28,6 +28,7 @@ import {
 import { GeneratedMetadata } from '../types';
 import { drawVideoFrame } from '../utils/canvasRenderer';
 import { narrationEngine } from '../utils/audio';
+import { generateSceneClip, isClipGenerationSupported } from '../utils/clipGenerator';
 import { FREE_STOCK_PRESETS, searchFreeStockImages, StockMediaItem } from '../utils/stockMedia';
 import { isArabicScript } from '../utils/scriptDetect';
 import accPkLogoUrl from '../assets/acc-pk-logo.png';
@@ -48,6 +49,11 @@ interface SceneMedia {
   prompt: string;
   imageElement?: HTMLImageElement;
   videoElement?: HTMLVideoElement;
+  // True when this scene's video was produced by the AI clip generator (as opposed to an
+  // uploaded file or a stock clip) — used only to label the thumbnail in the UI.
+  isClip?: boolean;
+  clipDurationSec?: number;
+  posterUrl?: string;
 }
 
 export const VideoStudio: React.FC<VideoStudioProps> = ({
@@ -71,6 +77,12 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
   const [sceneMediaMap, setSceneMediaMap] = useState<Record<number, SceneMedia>>({});
   const [generatingSceneIdx, setGeneratingSceneIdx] = useState<number | null>(null);
   const [sceneImageErrorIdx, setSceneImageErrorIdx] = useState<number | null>(null);
+  const [generatingClipIdx, setGeneratingClipIdx] = useState<number | null>(null);
+  const [clipStage, setClipStage] = useState<string>('');
+  const [clipErrorIdx, setClipErrorIdx] = useState<number | null>(null);
+  const [clipError, setClipError] = useState<string>('');
+  const [clipDuration, setClipDuration] = useState<3 | 4>(4);
+  const clipSupported = isClipGenerationSupported();
   const [editingPromptIdx, setEditingPromptIdx] = useState<number | null>(null);
   const [copiedPromptIdx, setCopiedPromptIdx] = useState<number | null>(null);
 
@@ -385,6 +397,58 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
       setSceneImageErrorIdx(idx);
     } finally {
       setGeneratingSceneIdx(null);
+    }
+  };
+
+  // Generate a short animated AI clip (3-4s) for a specific scene. Replaces that scene's
+  // still with a real looping webm, so both the live preview and the exported recording
+  // show motion instead of a frozen picture.
+  const handleGenerateSceneClip = async (idx: number) => {
+    setGeneratingClipIdx(idx);
+    setClipErrorIdx(null);
+    setClipError('');
+    setClipStage('Generating frames...');
+
+    const scenePrompt =
+      sceneMediaMap[idx]?.prompt ||
+      metadata.scenes?.[idx]?.visualDescription ||
+      metadata.visualPrompt;
+
+    try {
+      const clip = await generateSceneClip({
+        prompt: scenePrompt,
+        durationSec: clipDuration,
+        onProgress: setClipStage,
+      });
+
+      setSceneMediaMap((prev) => {
+        // Release the previous generated clip's blob so repeated regenerations of the
+        // same scene don't leak memory. Only ours — uploaded/stock URLs aren't touched.
+        const previous = prev[idx];
+        if (previous?.isClip && previous.url) {
+          URL.revokeObjectURL(previous.url);
+        }
+        return {
+          ...prev,
+          [idx]: {
+            ...(previous || { prompt: scenePrompt }),
+            url: clip.url,
+            type: 'video',
+            videoElement: clip.videoElement,
+            imageElement: undefined,
+            isClip: true,
+            clipDurationSec: clipDuration,
+            posterUrl: clip.posterUrl,
+          },
+        };
+      });
+    } catch (e: any) {
+      console.error('Error generating scene clip:', e);
+      setClipErrorIdx(idx);
+      setClipError(e?.message || 'Clip generation failed.');
+    } finally {
+      setGeneratingClipIdx(null);
+      setClipStage('');
     }
   };
 
@@ -723,6 +787,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
             const sceneMedia = sceneMediaMap[idx];
             const scenePrompt = sceneMedia?.prompt || scene.visualDescription || metadata.visualPrompt;
             const isGeneratingThis = generatingSceneIdx === idx;
+            const isGeneratingClipThis = generatingClipIdx === idx;
             const isActive = activeSceneIndex === idx;
 
             return (
@@ -783,6 +848,20 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
                         <span className="text-[9px] uppercase tracking-wider text-white/40 block">Default Grid</span>
                       </div>
                     )}
+
+                    {sceneMedia?.isClip && (
+                      <span className="absolute bottom-1 left-1 text-[8px] uppercase tracking-wider bg-[#c5a47e] text-black px-1.5 py-0.5 font-bold">
+                        AI Clip {sceneMedia.clipDurationSec ?? clipDuration}s
+                      </span>
+                    )}
+
+                    {isGeneratingClipThis && (
+                      <div className="absolute inset-0 bg-black/80 flex items-center justify-center text-center px-2">
+                        <span className="text-[9px] uppercase tracking-wider text-[#c5a47e] animate-pulse">
+                          {clipStage || 'Building clip...'}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Scene Action Buttons */}
@@ -790,7 +869,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
                     {/* Generate AI Scene Image Button */}
                     <button
                       onClick={() => handleGenerateSceneImage(idx)}
-                      disabled={isGeneratingThis}
+                      disabled={isGeneratingThis || isGeneratingClipThis}
                       className="w-full bg-[#c5a47e] hover:bg-white text-black font-semibold text-[11px] uppercase tracking-wider py-1.5 px-3 flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
                     >
                       <Sparkles className="w-3.5 h-3.5 text-black" />
@@ -800,6 +879,51 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
                     {sceneImageErrorIdx === idx && (
                       <p className="text-[10px] text-red-400 leading-snug">
                         Image generation failed after retrying — try again, or use Upload/Free Stock instead.
+                      </p>
+                    )}
+
+                    {/* Generate AI Animated Clip (3-4s motion instead of a still) */}
+                    <div className="flex items-stretch gap-2">
+                      <button
+                        onClick={() => handleGenerateSceneClip(idx)}
+                        disabled={!clipSupported || isGeneratingClipThis || isGeneratingThis}
+                        title={
+                          clipSupported
+                            ? `Build a ${clipDuration}-second animated clip from AI frames of this prompt`
+                            : 'Your browser does not support canvas video recording'
+                        }
+                        className="flex-1 bg-[#1d2233] hover:bg-[#273049] text-white border border-[#c5a47e]/40 font-semibold text-[11px] uppercase tracking-wider py-1.5 px-3 flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Clapperboard className="w-3.5 h-3.5 text-[#c5a47e]" />
+                        <span>
+                          {isGeneratingClipThis
+                            ? clipStage || 'Building clip...'
+                            : `Generate AI Clip (${clipDuration}s)`}
+                        </span>
+                      </button>
+
+                      <div className="flex border border-white/15">
+                        {([3, 4] as const).map((secs) => (
+                          <button
+                            key={secs}
+                            onClick={() => setClipDuration(secs)}
+                            disabled={isGeneratingClipThis}
+                            title={`Make generated clips ${secs} seconds long`}
+                            className={`text-[10px] uppercase tracking-wider px-2 font-semibold transition-colors cursor-pointer disabled:opacity-50 ${
+                              clipDuration === secs
+                                ? 'bg-[#c5a47e] text-black'
+                                : 'bg-white/5 text-white/60 hover:text-white'
+                            }`}
+                          >
+                            {secs}s
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {clipErrorIdx === idx && (
+                      <p className="text-[10px] text-red-400 leading-snug">
+                        {clipError} Try again, or use Upload/Free Stock instead.
                       </p>
                     )}
 

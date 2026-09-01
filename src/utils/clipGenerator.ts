@@ -42,7 +42,7 @@ export function isClipGenerationSupported(): boolean {
   );
 }
 
-function loadImage(url: string, timeoutMs = 30000): Promise<HTMLImageElement> {
+function loadImage(url: string, timeoutMs = 90000): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -133,7 +133,26 @@ export async function generateSceneClip(options: SceneClipOptions): Promise<Scen
     (_, i) => 100000 + i * 7919 + Math.floor(Math.random() * 5000)
   );
   const urls = await Promise.all(seeds.map((seed) => fetchStill(prompt, seed)));
-  const images = await Promise.all(urls.map((url) => loadImage(url)));
+
+  // Load the stills ONE AT A TIME. Requesting them concurrently makes Pollinations
+  // reject the batch with HTTP 429 immediately, which made clip generation fail every
+  // single time. Each image also takes 20-50s to generate, so this is slow by nature —
+  // hence the per-frame progress reporting.
+  const images: HTMLImageElement[] = [];
+  for (let i = 0; i < urls.length; i++) {
+    onProgress?.(`Generating frame ${i + 1} of ${urls.length}...`);
+    try {
+      images.push(await loadImage(urls[i]));
+    } catch (err) {
+      // A single dropped frame shouldn't sink the whole clip — carry on as long as we
+      // end up with at least one usable image.
+      console.warn(`Scene clip frame ${i + 1} failed to load, skipping it:`, err);
+    }
+  }
+
+  if (images.length === 0) {
+    throw new Error('None of the clip frames could be generated. Try again in a moment.');
+  }
 
   // 2. Render + record.
   onProgress?.('Rendering clip...');

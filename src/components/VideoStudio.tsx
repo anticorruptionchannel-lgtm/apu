@@ -397,7 +397,10 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
   // Loads an <img> for a generated URL, rejecting on error OR on a timeout — Pollinations.ai
   // (the free, keyless image backend) is occasionally slow/flaky, and without a timeout an
   // image that never fires onload/onerror leaves the "Generating..." button stuck forever.
-  const loadImageWithTimeout = (imageUrl: string, timeoutMs = 20000): Promise<HTMLImageElement> => {
+  // Pollinations generates each image on demand and is highly variable — measured at
+  // 18s, 40s and 50s for the same kind of prompt. The old 20s ceiling was under its
+  // typical time, so generation "failed" constantly on images that were actually fine.
+  const loadImageWithTimeout = (imageUrl: string, timeoutMs = 90000): Promise<HTMLImageElement> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';

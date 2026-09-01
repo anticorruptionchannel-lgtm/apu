@@ -462,15 +462,20 @@ function pcmToWavBase64(pcmBase64: string, sampleRate: number, channels: number,
 // API: Generate Speech Audio (TTS using Gemini TTS)
 app.post('/api/generate-speech', async (req, res) => {
   try {
-    const { text, voiceName = 'Kore', voiceId } = req.body;
+    const { text, voiceName = 'Kore', voiceId, language = 'urdu' } = req.body;
     if (!text) {
       return res.status(400).json({ error: 'Text is required for TTS' });
     }
 
-    // Prefer ElevenLabs when configured — better voice quality and a more generous
-    // free tier than Gemini TTS's 10-requests/day limit, and eleven_v3 explicitly
-    // supports Urdu/Punjabi. Falls through to Gemini TTS below on any failure.
-    if (process.env.ELEVENLABS_API_KEY) {
+    // Pick the engine by language. ElevenLabs' free tier only exposes its *premade*
+    // voices, and every one of those is an English voice — asked to read Urdu they
+    // mangle the pronunciation badly. Gemini TTS is natively multilingual, so South
+    // Asian scripts go there first and fall back to ElevenLabs, while English keeps
+    // using ElevenLabs (better quality, far more generous free tier).
+    const isSouthAsianScript =
+      language === 'urdu' || language === 'punjabi' || language === 'roman_urdu';
+
+    if (process.env.ELEVENLABS_API_KEY && !isSouthAsianScript) {
       try {
         const audioUrl = await generateElevenLabsSpeech(text, voiceId || process.env.ELEVENLABS_VOICE_ID || ELEVENLABS_DEFAULT_VOICE_ID);
         return res.json({ audioUrl, provider: 'elevenlabs' });
@@ -481,9 +486,18 @@ app.post('/api/generate-speech', async (req, res) => {
 
     const ai = getGenAI();
 
+    const languageDirective =
+      language === 'urdu'
+        ? 'Read the following aloud as a native Urdu speaker, in natural Urdu pronunciation.'
+        : language === 'punjabi'
+          ? 'Read the following aloud as a native Punjabi speaker, in natural Punjabi pronunciation.'
+          : language === 'roman_urdu'
+            ? 'The following is Urdu written in Roman letters. Read it aloud as natural spoken Urdu, not as English.'
+            : 'Read the following aloud in natural English.';
+
     const response = await withRetry(() => ai.models.generateContent({
       model: 'gemini-3.1-flash-tts-preview',
-      contents: [{ parts: [{ text: `Say with serious, authoritative news presenter tone: ${text}` }] }],
+      contents: [{ parts: [{ text: `${languageDirective} Say with a serious, authoritative news presenter tone, pronouncing every word naturally and correctly: ${text}` }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {

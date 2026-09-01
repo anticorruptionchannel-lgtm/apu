@@ -109,6 +109,9 @@ export default function App() {
           body: JSON.stringify({
             text: contentData.script,
             voiceName: 'Kore',
+            // Without this the server can't tell Urdu from English and was sending
+            // Urdu scripts to an English-only ElevenLabs voice, which mispronounced them.
+            language: selectedLanguage,
           }),
         });
         const speechData = await speechRes.json();

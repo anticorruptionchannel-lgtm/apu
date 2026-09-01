@@ -43,6 +43,9 @@ interface VideoStudioProps {
   channelName: string;
 }
 
+// Seconds each scene holds when there's no narration progress to sync to.
+const FALLBACK_SCENE_SECS = 10;
+
 interface SceneMedia {
   url: string;
   type: 'image' | 'video';
@@ -105,6 +108,16 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
   const logoPositionRef = useRef(logoPosition);
   const logoAnimationStyleRef = useRef(logoAnimationStyle);
   const channelNameRef = useRef(channelName);
+
+  // Narration progress (0..1) drives which scene is on screen. Previously the render
+  // loop advanced scenes on a fixed 10s-per-scene wall clock while playback/export ended
+  // when the narration ended — so any script shorter than sceneCount x 10s simply never
+  // reached its later scenes, and the exported file cut off partway through. Tracking the
+  // real narration position instead keeps the scenes spread across exactly the audio we
+  // have, however long it is. `narrationActive` tells the loop whether this signal is
+  // live; when it isn't (narration failed to start) the loop falls back to the timer.
+  const narrationProgressRef = useRef(0);
+  const narrationActiveRef = useRef(false);
 
   useEffect(() => { metadataRef.current = metadata; }, [metadata]);
   useEffect(() => { sceneMediaMapRef.current = sceneMediaMap; }, [sceneMediaMap]);
@@ -217,15 +230,21 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
 
       const meta = metadataRef.current;
 
-      // Determine active scene based on time (10 seconds per scene)
+      // Determine the active scene from how far through the narration we are, so every
+      // scene gets screen time no matter how long the script turns out to be. The old
+      // fixed 10s-per-scene clock also wrapped with `% scenes.length`, which sent long
+      // playbacks back round to scene 0 mid-run; clamping instead holds on the final
+      // scene until the narration actually ends.
       let sIndex = 0;
       let caption = meta.script.slice(0, 60);
       if (meta.scenes && meta.scenes.length > 0) {
-        const sceneDuration = 10;
-        sIndex = Math.min(
-          Math.floor(localTime / sceneDuration) % meta.scenes.length,
-          meta.scenes.length - 1
-        );
+        const sceneCount = meta.scenes.length;
+        const progress = narrationActiveRef.current
+          ? narrationProgressRef.current
+          : // No usable narration signal — fall back to the original 10s-per-scene pace.
+            Math.min(localTime / (sceneCount * FALLBACK_SCENE_SECS), 1);
+
+        sIndex = Math.min(Math.floor(progress * sceneCount), sceneCount - 1);
         setActiveSceneIndex(sIndex);
         const scene = meta.scenes[sIndex];
         if (scene) {
@@ -301,22 +320,20 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
       narrationEngine.stop();
     } else {
       setIsPlaying(true);
+      narrationProgressRef.current = 0;
+      narrationActiveRef.current = false;
       narrationEngine.speak({
         text: metadata.script,
         language: metadata.language,
         audioUrl: audioUrl,
         onBoundary: (charIndex, textLength) => {
-          const ratio = charIndex / textLength;
-          if (metadata.scenes && metadata.scenes.length > 0) {
-            const idx = Math.min(
-              Math.floor(ratio * metadata.scenes.length),
-              metadata.scenes.length - 1
-            );
-            setActiveSceneIndex(idx);
-            setCurrentCaption(metadata.scenes[idx].suggestedOverlayText);
-          }
+          // Feed the render loop instead of setting the scene here too — both used to
+          // drive activeSceneIndex independently and fought each other.
+          narrationActiveRef.current = true;
+          narrationProgressRef.current = textLength > 0 ? charIndex / textLength : 0;
         },
         onEnd: () => {
+          narrationActiveRef.current = false;
           setIsPlaying(false);
         },
       });
@@ -562,16 +579,46 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
       // Total time needed to cycle through every scene at least once
       // (matches the 10s-per-scene timing used in the render loop above).
       const sceneCount = metadata.scenes?.length || 1;
-      const minSceneCoverageSecs = sceneCount * 10;
+      const minSceneCoverageSecs = sceneCount * FALLBACK_SCENE_SECS;
 
       let mediaRecorder: MediaRecorder;
+      const recordStartedAt = performance.now();
+
+      narrationProgressRef.current = 0;
+      narrationActiveRef.current = false;
+
+      const stopRecording = () => {
+        if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+      };
 
       narrationEngine.speak({
         text: metadata.script,
         language: metadata.language,
         audioUrl: audioUrl,
+        // The export needs the same progress signal as live playback, otherwise the
+        // scenes fall back to the timer and drift out of sync with the narration.
+        onBoundary: (charIndex, textLength) => {
+          narrationActiveRef.current = true;
+          narrationProgressRef.current = textLength > 0 ? charIndex / textLength : 0;
+        },
         onEnd: () => {
-          if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+          const hadNarration = narrationActiveRef.current;
+          narrationActiveRef.current = false;
+
+          // If narration never actually produced progress (no server TTS and no working
+          // SpeechSynthesis voice), onEnd fires almost immediately — stopping there would
+          // write out a near-empty file. Hold the recording open long enough to play the
+          // scene rotation through once at the fallback pace instead.
+          const elapsedSecs = (performance.now() - recordStartedAt) / 1000;
+          const remainingSecs = hadNarration
+            ? 0
+            : Math.max(0, minSceneCoverageSecs - elapsedSecs);
+
+          if (remainingSecs > 0) {
+            setTimeout(stopRecording, remainingSecs * 1000);
+          } else {
+            stopRecording();
+          }
         },
       });
 
@@ -606,16 +653,25 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
         setIsPlaying(false);
       };
 
-      mediaRecorder.start();
+      // Chunk once a second rather than accumulating one blob delivered at stop(), so a
+      // long export can't lose everything to a single dropped dataavailable event.
+      mediaRecorder.start(1000);
       setIsPlaying(true);
 
       // Safety net only — normal recordings end via onEnd above once narration
       // finishes. This just guards against speech synthesis/audio never firing
-      // onEnd, so it must comfortably exceed both the script length and the
-      // full scene rotation.
-      const safetyCapSecs = Math.max(minSceneCoverageSecs, 45) + 15;
+      // onEnd, so it must comfortably exceed both the script length and the full
+      // scene rotation. The old flat `max(coverage, 45) + 15` was itself a source of
+      // truncated exports: a two-minute script blew straight past it and got cut off
+      // mid-sentence, so estimate the narration length from the script instead.
+      const wordCount = metadata.script.trim().split(/\s+/).filter(Boolean).length;
+      const estimatedNarrationSecs = (wordCount / 130) * 60; // ~130 wpm, slow news read
+      const safetyCapSecs =
+        Math.max(minSceneCoverageSecs, 45, estimatedNarrationSecs * 1.5) + 30;
+
       setTimeout(() => {
         if (mediaRecorder.state === 'recording') {
+          console.warn('Recording hit the safety cap before narration reported it ended.');
           mediaRecorder.stop();
         }
       }, safetyCapSecs * 1000);

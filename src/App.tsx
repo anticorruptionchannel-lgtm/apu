@@ -278,6 +278,7 @@ export default function App() {
                   logoAnimationStyle={logoAnimationStyle}
                   audioUrl={audioUrl}
                   channelName={channelName}
+                  endingCTA={endingCTA}
                 />
               )}
 

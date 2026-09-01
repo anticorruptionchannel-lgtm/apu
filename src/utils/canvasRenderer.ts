@@ -1,4 +1,5 @@
 import { isArabicScript } from './scriptDetect';
+import { CHANNEL_CONTACT } from '../data/channelInfo';
 
 // Nastaliq needs a larger nominal size than Latin sans-serif at comparable visual
 // weight (its diagonal, calligraphic strokes read smaller at the same px value).
@@ -329,4 +330,118 @@ export function drawVideoFrame(options: DrawVideoFrameOptions) {
     ctx.fillText(currentCaption, capX, capY + 6);
     ctx.restore();
   }
+}
+
+export interface DrawOutroCardOptions {
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+  logoImage: HTMLImageElement | null;
+  endingCTA: string;
+  channelName?: string;
+  // 0 -> 1 across the card's on-screen time, used for the fade-in and a slow drift.
+  progress: number;
+}
+
+// The end card auto-appended to the last few seconds of every video: channel logo, the
+// subscribe CTA, and the official contact block. Drawn as a full-frame replacement for
+// the scene composition rather than an overlay, so nothing from the last scene bleeds
+// through behind the contact details.
+export function drawOutroCard(options: DrawOutroCardOptions) {
+  const { canvas, ctx, logoImage, endingCTA, channelName = 'ACC PK', progress } = options;
+  const width = canvas.width;
+  const height = canvas.height;
+  const cx = width / 2;
+  const accent = '#c5a47e';
+
+  // Ease the card in over its first ~15% so it doesn't hard-cut from the last scene.
+  const fade = Math.min(progress / 0.15, 1);
+
+  ctx.save();
+  ctx.globalAlpha = fade;
+
+  // Backdrop
+  const grad = ctx.createLinearGradient(0, 0, 0, height);
+  grad.addColorStop(0, '#0f1115');
+  grad.addColorStop(0.5, '#16181f');
+  grad.addColorStop(1, '#08090c');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, width, height);
+
+  // Accent rules top and bottom
+  ctx.fillStyle = accent;
+  ctx.fillRect(0, 0, width, 5);
+  ctx.fillRect(0, height - 5, width, 5);
+
+  // Logo, drifting up a few pixels as the card plays.
+  const logoSize = Math.min(height * 0.30, 200);
+  const logoY = height * 0.09 - progress * 6;
+  if (logoImage && logoImage.complete && logoImage.naturalWidth > 0) {
+    ctx.drawImage(logoImage, cx - logoSize / 2, logoY, logoSize, logoSize);
+  }
+
+  ctx.textAlign = 'center';
+
+  // Channel name + tagline
+  let y = logoY + logoSize + 42;
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '900 46px sans-serif';
+  ctx.fillText(channelName.toUpperCase(), cx, y);
+
+  y += 32;
+  ctx.fillStyle = accent;
+  ctx.font = 'italic 20px serif';
+  ctx.fillText(`"${CHANNEL_CONTACT.tagline}"`, cx, y);
+
+  // Subscribe CTA — wrapped, since the generated line varies in length.
+  y += 44;
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 22px sans-serif';
+  const ctaLines = wrapToWidth(ctx, `🔔 ${endingCTA}`, width - 160);
+  ctaLines.slice(0, 3).forEach((line) => {
+    ctx.fillText(line, cx, y);
+    y += 30;
+  });
+
+  // Contact block
+  y += 14;
+  ctx.fillStyle = accent;
+  ctx.fillRect(cx - 150, y - 22, 300, 34);
+  ctx.fillStyle = '#000000';
+  ctx.font = '900 18px sans-serif';
+  ctx.fillText('OFFICIAL ACC PK CARD', cx, y + 2);
+
+  y += 44;
+  const details = [
+    `Founder & CEO: ${CHANNEL_CONTACT.ceo}`,
+    `Mobile / WhatsApp: ${CHANNEL_CONTACT.mobile}`,
+    `Landline: ${CHANNEL_CONTACT.landline}`,
+    CHANNEL_CONTACT.address,
+  ];
+  ctx.font = '600 19px sans-serif';
+  details.forEach((line) => {
+    ctx.fillStyle = 'rgba(255,255,255,0.88)';
+    ctx.fillText(line, cx, y);
+    y += 28;
+  });
+
+  ctx.restore();
+}
+
+// Greedy word wrap against a pixel width, using whatever font is currently set on ctx.
+function wrapToWidth(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = '';
+
+  words.forEach((word) => {
+    const candidate = line ? `${line} ${word}` : word;
+    if (ctx.measureText(candidate).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = candidate;
+    }
+  });
+  if (line) lines.push(line);
+  return lines;
 }

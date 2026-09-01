@@ -26,12 +26,18 @@ import {
   Clapperboard,
 } from 'lucide-react';
 import { GeneratedMetadata } from '../types';
-import { drawVideoFrame } from '../utils/canvasRenderer';
+import { drawVideoFrame, drawOutroCard } from '../utils/canvasRenderer';
 import { narrationEngine } from '../utils/audio';
 import { generateSceneClip, isClipGenerationSupported } from '../utils/clipGenerator';
 import { FREE_STOCK_PRESETS, searchFreeStockImages, StockMediaItem } from '../utils/stockMedia';
 import { isArabicScript } from '../utils/scriptDetect';
 import accPkLogoUrl from '../assets/acc-pk-logo.png';
+import {
+  DEFAULT_ENDING_CTA,
+  DEFAULT_OUTRO_SECS,
+  OUTRO_SECS_OPTIONS,
+  type OutroSecs,
+} from '../data/channelInfo';
 
 interface VideoStudioProps {
   metadata: GeneratedMetadata;
@@ -41,6 +47,7 @@ interface VideoStudioProps {
   logoAnimationStyle: 'spin' | 'pulse' | 'glitch' | 'capcut_badge';
   audioUrl?: string | null;
   channelName: string;
+  endingCTA?: string;
 }
 
 // Seconds each scene holds when there's no narration progress to sync to.
@@ -67,6 +74,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
   logoAnimationStyle,
   audioUrl,
   channelName,
+  endingCTA = DEFAULT_ENDING_CTA,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -118,6 +126,17 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
   // live; when it isn't (narration failed to start) the loop falls back to the timer.
   const narrationProgressRef = useRef(0);
   const narrationActiveRef = useRef(false);
+
+  // Outro end card. Once the narration finishes, playback and recording both keep
+  // running for `outroSecs` more while the render loop draws the contact/subscribe card,
+  // so every exported video ends on it without anyone having to add it by hand.
+  const [outroEnabled, setOutroEnabled] = useState(true);
+  const [outroSecs, setOutroSecs] = useState<OutroSecs>(DEFAULT_OUTRO_SECS as OutroSecs);
+  const outroStartedAtRef = useRef<number | null>(null);
+  const endingCTARef = useRef(endingCTA);
+  const outroSecsRef = useRef<number>(DEFAULT_OUTRO_SECS);
+  useEffect(() => { endingCTARef.current = endingCTA; }, [endingCTA]);
+  useEffect(() => { outroSecsRef.current = outroSecs; }, [outroSecs]);
 
   useEffect(() => { metadataRef.current = metadata; }, [metadata]);
   useEffect(() => { sceneMediaMapRef.current = sceneMediaMap; }, [sceneMediaMap]);
@@ -230,6 +249,22 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
 
       const meta = metadataRef.current;
 
+      // Outro phase: narration has finished and we're holding on the end card.
+      const outroStartedAt = outroStartedAtRef.current;
+      if (outroStartedAt !== null) {
+        const outroElapsed = (performance.now() - outroStartedAt) / 1000;
+        drawOutroCard({
+          canvas,
+          ctx,
+          logoImage: logoImgRef.current,
+          endingCTA: endingCTARef.current,
+          channelName: channelNameRef.current,
+          progress: Math.min(outroElapsed / outroSecsRef.current, 1),
+        });
+        animationFrameRef.current = requestAnimationFrame(renderLoop);
+        return;
+      }
+
       // Determine the active scene from how far through the narration we are, so every
       // scene gets screen time no matter how long the script turns out to be. The old
       // fixed 10s-per-scene clock also wrapped with `% scenes.length`, which sent long
@@ -317,6 +352,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
   const togglePlay = () => {
     if (isPlaying) {
       setIsPlaying(false);
+      outroStartedAtRef.current = null;
       narrationEngine.stop();
     } else {
       setIsPlaying(true);
@@ -334,13 +370,24 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
         },
         onEnd: () => {
           narrationActiveRef.current = false;
-          setIsPlaying(false);
+          if (!outroEnabled) {
+            setIsPlaying(false);
+            return;
+          }
+          // Keep the loop running so it can draw the end card, then stop.
+          outroStartedAtRef.current = performance.now();
+          setTimeout(() => {
+            outroStartedAtRef.current = null;
+            setIsPlaying(false);
+          }, outroSecs * 1000);
         },
       });
     }
   };
 
   const handleReset = () => {
+    outroStartedAtRef.current = null;
+    narrationActiveRef.current = false;
     narrationEngine.stop();
     setIsPlaying(false);
     setTime(0);
@@ -614,10 +661,25 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
             ? 0
             : Math.max(0, minSceneCoverageSecs - elapsedSecs);
 
+          // Roll the end card into the recording itself, then stop. Starting the outro
+          // only after any scene-coverage catch-up means the card is always the final
+          // thing in the file rather than landing mid-rotation.
+          const finish = () => {
+            if (!outroEnabled) {
+              stopRecording();
+              return;
+            }
+            outroStartedAtRef.current = performance.now();
+            setTimeout(() => {
+              outroStartedAtRef.current = null;
+              stopRecording();
+            }, outroSecs * 1000);
+          };
+
           if (remainingSecs > 0) {
-            setTimeout(stopRecording, remainingSecs * 1000);
+            setTimeout(finish, remainingSecs * 1000);
           } else {
-            stopRecording();
+            finish();
           }
         },
       });
@@ -667,7 +729,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
       const wordCount = metadata.script.trim().split(/\s+/).filter(Boolean).length;
       const estimatedNarrationSecs = (wordCount / 130) * 60; // ~130 wpm, slow news read
       const safetyCapSecs =
-        Math.max(minSceneCoverageSecs, 45, estimatedNarrationSecs * 1.5) + 30;
+        Math.max(minSceneCoverageSecs, 45, estimatedNarrationSecs * 1.5) + outroSecs + 30;
 
       setTimeout(() => {
         if (mediaRecorder.state === 'recording') {
@@ -762,6 +824,38 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
                 <span>
                   Voice: <strong className="text-white">{metadata.languageLabel || metadata.language}</strong>
                 </span>
+              </div>
+            </div>
+
+            {/* Auto end-card controls */}
+            <div className="flex flex-wrap items-center gap-2 pb-2">
+              <label className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-white/70 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={outroEnabled}
+                  onChange={(e) => setOutroEnabled(e.target.checked)}
+                  disabled={isRecording}
+                  className="accent-[#c5a47e] cursor-pointer"
+                />
+                <span>Auto end card (CTA + contact)</span>
+              </label>
+
+              <div className="flex border border-white/15">
+                {OUTRO_SECS_OPTIONS.map((secs) => (
+                  <button
+                    key={secs}
+                    onClick={() => setOutroSecs(secs)}
+                    disabled={!outroEnabled || isRecording}
+                    title={`Hold the end card for ${secs} second${secs > 1 ? 's' : ''}`}
+                    className={`text-[10px] uppercase tracking-wider px-2 py-0.5 font-semibold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                      outroSecs === secs && outroEnabled
+                        ? 'bg-[#c5a47e] text-black'
+                        : 'bg-white/5 text-white/60 hover:text-white'
+                    }`}
+                  >
+                    {secs}s
+                  </button>
+                ))}
               </div>
             </div>
 
